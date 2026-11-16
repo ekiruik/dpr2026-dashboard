@@ -249,8 +249,8 @@ window.DPR_CONFIG = {
   sheetId: "",   // kept empty: the sheet ID is stored encrypted in "auth" below
 
   // LOGIN – the Google Sheet ID is encrypted with the dashboard password (AES-256-GCM, PBKDF2-SHA256).
-  // Without the password the page cannot find the data. To change the password, use
-  // the About tab (after logging in) → "Change the dashboard password", and paste the line it makes here.
+  // Without the password the page cannot find the data. To change the password, ask the dashboard developer
+  // to generate a new auth line (it is made with the Google Sheet ID and the new password).
   auth: {"salt": "ZC7Tzu67Hcu6YXJ2VN5plw==", "iv": "fxoNUormeyJIY9cG", "iterations": 250000, "data": "qCSYPCm1Tgra92h2JpCDGeYrXvColrmDeSFtPUJd+teJ0ZVNGJn/1jMmLjadN9nkGHqDIus0rKc3Hj6YH/BQomxGb0RTbDWPGzyI"},
 
   // Tab (worksheet) names inside the Google Sheet, one per ODK form.
@@ -1243,7 +1243,12 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
         ${kpi(Object.keys(flags).length, "Sites with red flags", "see table below")}
       </div>
       <h2>Submissions over time</h2>
-      <div class="grid2">${card("Forms received per day, by tool", "c-days")}${card("Patient records by county and cohort", "c-plcounty")}</div>
+      <div class="grid2">
+        ${card("Health Facility Assessment – forms received per day", "c-days-hf", `Total: ${D.hf.length}`)}
+        ${card("Patient-Level Questionnaire – records received per day", "c-days-pl", `Total: ${D.pl.length.toLocaleString()}`)}
+        ${card("Healthcare Worker KII – interviews received per day", "c-days-kii", `Total: ${D.kii.length}`)}
+        ${card("Patient records by county and cohort", "c-plcounty")}
+      </div>
       <h2>Progress by site</h2>
       <div class="card">${table(["Site", "Facility", "County", "Sub-county", "Type", "HF", "Records 12m", "Records 24m", `Records vs target (${T.pl_per_site})`, `KIIs (target ${T.kii_per_site})`, "Flags"],
         scope.map(s => { const tot = (pl12[s.id] || 0) + (pl24[s.id] || 0);
@@ -1251,7 +1256,9 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
             hfSites.has(s.id) ? status("good", "Done") : status("", "Pending"), pl12[s.id] || 0, pl24[s.id] || 0,
             tot ? `${pct(tot, T.pl_per_site)}%` : "–", klN[s.id] || 0, (flags[s.id] || []).map(f => status(f[0], f[1])).join("<br>")]; }), [6, 7, 8, 9])}</div>`;
     const dates = [...new Set(Object.values(D).flat().map(r => r._date).filter(Boolean))].sort();
-    chart("c-days", "bar", dates, Object.entries(FORMS).map(([f, n]) => ({ label: n, data: dates.map(d => D[f].filter(r => r._date === d).length) })), { stacked: true });
+    const ser = SER();                                   // one chart per form, same colour as before for that form
+    Object.keys(FORMS).forEach((f, i) => chart(`c-days-${f}`, "bar", dates.map(d => new Date(d + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })),
+      [{ label: FORMS[f], color: ser[i], data: dates.map(d => D[f].filter(r => r._date === d).length) }], { labels: dates.length <= 20 }));
     const cs = CFG.counties.filter(c => D.pl.some(r => SITE[r._site]?.county === c));
     chart("c-plcounty", "bar", cs, [["1", "12-month cohort"], ["2", "24-month cohort"]].map(([k, l]) => ({ label: l, data: cs.map(c => D.pl.filter(r => r.cohort === k && SITE[r._site]?.county === c).length) })), { labels: true });
   }
@@ -1401,20 +1408,8 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       <li><b>VL coverage</b> – VL done among those active at the point. <b>VL suppression</b> – result &lt;200 copies/mL among records with a result.</li>
       <li><b>AHD</b> – baseline CD4 &lt;200 or age &lt;5 at ART initiation.</li>
       <li><b>Red flags</b> – integration date outside window; facility appears stand-alone; &lt;15 new initiations in a cohort window; reserve site used.</li></ul>
-      <h3>Site list</h3><p>${SITES.length} sites (${SITES.filter(s => s.type === "selected").length} selected, ${SITES.filter(s => s.type === "reserve").length} reserves) from the ODK facility list, version 2026111601.</p></div>
-      <div class="card" style="margin-top:16px">
-        <h3>Change the dashboard password (administrators)</h3>
-        <p class="muted">Creates a new <code>auth:</code> line for this same file. Nothing is sent anywhere. After generating: open <b>index.html</b> on GitHub → Edit (pencil) → Ctrl+F <code>auth:</code> → replace that whole line with the new one → Commit. Then share the new password.</p>
-        <div class="pwgrid">
-          <label>New password (min. 10 characters)<input id="np1" type="password" autocomplete="new-password"></label>
-          <label>Repeat new password<input id="np2" type="password" autocomplete="new-password"></label>
-          <label>Google Sheet link or ID <span class="muted">(leave blank to keep the current sheet)</span><input id="nsid" type="text"></label>
-        </div>
-        <button id="np-go" type="button" class="primary" style="margin-top:10px">Generate new password line</button>
-        <p id="np-msg" class="muted"></p>
-        <textarea id="np-out" class="npout" readonly hidden></textarea>
-      </div>`;
-    $("#np-go").addEventListener("click", makeAuthLine);
+      <h3>Site list</h3><p>${SITES.length} sites (${SITES.filter(s => s.type === "selected").length} selected, ${SITES.filter(s => s.type === "reserve").length} reserves) from the ODK facility list, version 2026111601.</p></div>`;
+
   }
 
   // ---------------------------------------------------------------- shell
@@ -1474,22 +1469,6 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(A.iv) }, key, b64(A.data));   // throws if password is wrong
     return JSON.parse(new TextDecoder().decode(plain));
-  }
-  async function makeAuthLine() {
-    const msg = $("#np-msg"), out = $("#np-out"), p1 = $("#np1").value, p2 = $("#np2").value;
-    let id = $("#nsid").value.trim(); const m = id.match(/\/d\/([a-zA-Z0-9_-]{20,})/); if (m) id = m[1];
-    id = id || CFG.sheetId; out.hidden = true; msg.style.color = "";
-    const fail = t => { msg.textContent = t; msg.style.color = css("--critical"); };
-    if (!/^[a-zA-Z0-9_-]{20,}$/.test(id || "")) return fail("Enter the Google Sheet link (no sheet is connected yet).");
-    if (p1.length < 10) return fail("Use at least 10 characters.");
-    if (p1 !== p2) return fail("The two passwords do not match.");
-    const enc = u => btoa(String.fromCharCode(...new Uint8Array(u)));
-    const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), iterations = 250000;
-    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(p1), "PBKDF2", false, ["deriveKey"]);
-    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
-    const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify({ sheetId: id })));
-    out.value = `  auth: ${JSON.stringify({ salt: enc(salt), iv: enc(iv), iterations, data: enc(data) })},`;
-    out.hidden = false; out.select(); msg.textContent = "Done – copy the whole line below and paste it over the auth: line in index.html.";
   }
   function startWithLogin() {
     if (!CFG.auth || !CFG.auth.data) { start(); return; }                      // no password set → open
