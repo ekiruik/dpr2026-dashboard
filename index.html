@@ -218,6 +218,7 @@ License: MIT
     <label>Facility level (KEPH) <select id="f-level"><option value="">All levels</option></select></label>
     <label>Ownership <select id="f-own"><option value="">All ownership</option></select></label>
     <label>Integration model <select id="f-model"><option value="">All models</option></select></label>
+    <label>Pilot sites (Nairobi) <select id="f-pilot"><option value="exclude">Exclude pilot</option><option value="include">Include pilot</option><option value="only">Pilot only</option></select></label>
     <button id="f-clear" type="button" class="clear">Clear filters</button>
   </section>
   </div>
@@ -265,6 +266,9 @@ window.DPR_CONFIG = {
 
   // Field targets used on the Progress tab
   targets: { pl_per_site: 30, kii_per_site: 3 },
+
+  // Pilot counties: excluded from figures unless the "Pilot sites" filter says otherwise
+  pilotCounties: ["Nairobi"],
 
   // Counties shown in the county filter (others in the data are still counted under "All")
   counties: ["Kisumu", "Nakuru", "Uasin Gishu", "Nairobi"],
@@ -1128,7 +1132,16 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       mfl: hf.mfl_code || s.mfl, b15: hf.b15 || "", group: modelGroup(s.model) };
   }
   const F = id => ($(id) ? $(id).value : "");
+  const PILOT = new Set(CFG.pilotCounties || ["Nairobi"]);
+  /** Pilot filter: excluded by default; choosing a pilot county in the County filter always shows it. */
+  function pilotOK(s) {
+    const mode = F("#f-pilot") || "exclude", isPilot = PILOT.has(s.county);
+    if (mode === "only") return isPilot;
+    if (mode === "exclude" && isPilot && F("#f-county") !== s.county) return false;
+    return true;
+  }
   function siteMatch(s) {
+    if (!pilotOK(s)) return false;
     const p = profileOf(s);
     return (!F("#f-county") || s.county === F("#f-county")) && (!F("#f-sub") || s.sub_county === F("#f-sub"))
       && (!F("#f-fac") || s.id === F("#f-fac")) && (!F("#f-type") || s.type === F("#f-type"))
@@ -1150,9 +1163,9 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
     const subs = [...new Set(SITES.filter(s => !c || s.county === c).map(s => s.sub_county))].sort();
     $("#f-sub").innerHTML = `<option value="">All sub-counties</option>` + subs.map(x => `<option${x === sc ? " selected" : ""}>${esc(x)}</option>`).join("");
     if (sc && !subs.includes(sc)) $("#f-sub").value = "";
-    const facs = SITES.filter(s => (!c || s.county === c) && (!F("#f-sub") || s.sub_county === F("#f-sub")));
+    const facs = SITES.filter(s => pilotOK(s) && (!c || s.county === c) && (!F("#f-sub") || s.sub_county === F("#f-sub")));
     $("#f-fac").innerHTML = `<option value="">All facilities (${facs.length})</option>` + facs.map(s =>
-      `<option value="${s.id}"${s.id === fac ? " selected" : ""}>${s.id} – ${esc(s.name)}${s.type === "reserve" ? " (reserve)" : ""}</option>`).join("");
+      `<option value="${s.id}"${s.id === fac ? " selected" : ""}>${s.id} – ${esc(s.name)}${s.type === "reserve" ? " (reserve)" : ""}${PILOT.has(s.county) ? " (pilot)" : ""}</option>`).join("");
     if (fac && !facs.some(s => s.id === fac)) $("#f-fac").value = "";
   }
 
@@ -1382,6 +1395,7 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       <h3>Definitions</h3><ul>
       <li><b>ART delivery model (B15)</b> – Stand-alone: no general service point delivers ART. Fully integrated: stand-alone clinic no longer delivers initiation and refills (or &lt;10% of clients), ART at ≥1 general point, not dedicated HIV staff only, fully shared flow and a single integrated record. Otherwise partially integrated.</li>
       <li><b>Eligibility</b> – agreed integration date (B6) between 07/2024 and 03/2025, as set in the HF form.</li>
+      <li><b>Pilot sites</b> – Nairobi (Kibra CHC, Kware Dispensary) was the pilot county. Pilot sites are excluded from all figures by default; use the "Pilot sites" filter to include them or view them alone.</li>
       <li><b>Cohorts</b> – 12-month: ART start June–September 2025; 24-month: June–September 2024.</li>
       <li><b>Active on ART</b> – care status = "Alive and active on ART" at the follow-up point, among records with a documented status (excludes "Not documented").</li>
       <li><b>VL coverage</b> – VL done among those active at the point. <b>VL suppression</b> – result &lt;200 copies/mL among records with a result.</li>
@@ -1433,7 +1447,8 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
     $("#f-county").addEventListener("change", () => { $("#f-sub").value = ""; $("#f-fac").value = ""; cascade(); render(); });
     $("#f-sub").addEventListener("change", () => { $("#f-fac").value = ""; cascade(); render(); });
     ["#f-fac", "#f-level", "#f-own", "#f-model"].forEach(s => $(s).addEventListener("change", render));
-    $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); cascade(); render(); });
+    $("#f-pilot").addEventListener("change", () => { cascade(); render(); });
+    $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); $("#f-pilot").value = "exclude"; cascade(); render(); });
     $("#reload").addEventListener("click", refresh);
     $("#logout").addEventListener("click", () => { try { sessionStorage.removeItem("dpr-session"); } catch (e) {} location.reload(); });
     try { const t = localStorage.getItem("dpr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
