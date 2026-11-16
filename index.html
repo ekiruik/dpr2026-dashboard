@@ -1395,10 +1395,6 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
   // ---------------------------------------------------------------- tab: about
   function renderAbout() {
     $("#tab-about").innerHTML = `<div class="card">
-      <h3>Data source</h3><p>${DEMO ? "<b>DEMO MODE</b> – the figures are randomly generated so you can see the layout. Add the Google Sheet ID in <code>config.js</code> to show real data." :
-        `Live data from the connected Google Sheet, tabs: ${Object.entries(CFG.tabs).map(([k, v]) => `${FORMS[k]} = <code>${esc(v)}</code>`).join(", ")}.`}
-      Rows loaded: HF ${RAW.hf.length}, Patient-level ${RAW.pl.length}, KII ${RAW.kii.length}.</p>
-      <h3>Privacy</h3><p>Client identifiers (RoC ID, date of birth), device and data-collector fields are dropped as soon as the data loads and are never shown. Only connect a <b>de-identified</b> copy of the patient-level data – see README.</p>
       <h3>Definitions</h3><ul>
       <li><b>ART delivery model (B15)</b> – Stand-alone: no general service point delivers ART. Fully integrated: stand-alone clinic no longer delivers initiation and refills (or &lt;10% of clients), ART at ≥1 general point, not dedicated HIV staff only, fully shared flow and a single integrated record. Otherwise partially integrated.</li>
       <li><b>Eligibility</b> – agreed integration date (B6) between 07/2024 and 03/2025, as set in the HF form.</li>
@@ -1407,8 +1403,7 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       <li><b>Active on ART</b> – care status = "Alive and active on ART" at the follow-up point, among records with a documented status (excludes "Not documented").</li>
       <li><b>VL coverage</b> – VL done among those active at the point. <b>VL suppression</b> – result &lt;200 copies/mL among records with a result.</li>
       <li><b>AHD</b> – baseline CD4 &lt;200 or age &lt;5 at ART initiation.</li>
-      <li><b>Red flags</b> – integration date outside window; facility appears stand-alone; &lt;15 new initiations in a cohort window; reserve site used.</li></ul>
-      <h3>Site list</h3><p>${SITES.length} sites (${SITES.filter(s => s.type === "selected").length} selected, ${SITES.filter(s => s.type === "reserve").length} reserves) from the ODK facility list, version 2026111601.</p></div>`;
+      <li><b>Red flags</b> – integration date outside window; facility appears stand-alone; &lt;15 new initiations in a cohort window; reserve site used.</li></ul></div>`;
 
   }
 
