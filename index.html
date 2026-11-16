@@ -81,6 +81,20 @@ details summary { cursor: pointer; color: var(--accent); margin-top: 8px; font-s
 footer { margin: 32px 0 8px; }
 @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } select { min-width: 140px; } }
 
+.filters { align-items: flex-end; }
+.filters select { min-width: 150px; max-width: 240px; }
+button.clear { height: 34px; }
+.profile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+.profile:empty { display: none; }
+.profile h2 { margin: 0 0 8px; font-size: 16px; }
+.profile dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 16px; margin: 0; }
+.profile dt { font-size: 12px; color: var(--text-secondary); }
+.profile dd { margin: 0; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--chip); color: var(--text-primary); }
+.chipgroup { margin: 4px 0; }
+.chipgroup b { font-size: 12px; color: var(--text-secondary); font-weight: 600; margin-right: 6px; }
+
 </style>
 <!-- PapaParse 5.4.1 (MIT) -->
 <script>/* @license
@@ -134,9 +148,16 @@ License: MIT
 
   <section class="filters">
     <label>County <select id="f-county"><option value="">All counties</option></select></label>
+    <label>Sub-county <select id="f-sub"><option value="">All sub-counties</option></select></label>
+    <label>Facility <select id="f-fac"><option value="">All facilities</option></select></label>
+    <label>Facility level (KEPH) <select id="f-level"><option value="">All levels</option></select></label>
+    <label>Ownership <select id="f-own"><option value="">All ownership</option></select></label>
+    <label>Integration model <select id="f-model"><option value="">All models</option></select></label>
     <label>Site type <select id="f-type"><option value="">Selected + reserves</option><option value="selected">Selected only</option><option value="reserve">Reserves only</option></select></label>
     <label>Cohort <select id="f-cohort"><option value="">Both cohorts</option><option value="1">12-month (ART start Jun–Sep 2025)</option><option value="2">24-month (ART start Jun–Sep 2024)</option></select></label>
+    <button id="f-clear" type="button" class="clear">Clear filters</button>
   </section>
+  <section id="profile" class="profile"></section>
 
   <main>
     <section id="tab-progress" class="tab"></section>
@@ -186,6 +207,7 @@ window.DPR_CONFIG = {
 </script>
 <script>
 // Study site list (from the ODK facility list). Edit here if sites change.
+// keph: KEPH level code; keph_source: reported (site list/KMHFL) or inferred from the facility name; ownership: ODK code (blank = not on site list).
 window.DPR_SITES = [
  {
   "id": "K01",
@@ -194,7 +216,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K02",
@@ -203,7 +229,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K03",
@@ -212,7 +242,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K04",
@@ -221,7 +255,11 @@ window.DPR_SITES = [
   "sub_county": "Kisumu West",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K05",
@@ -230,7 +268,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Partial – HRH only (CCC physically separate)",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K06",
@@ -239,7 +281,11 @@ window.DPR_SITES = [
   "sub_county": "Muhoroni",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K07",
@@ -248,7 +294,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K08",
@@ -257,7 +307,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K09",
@@ -266,7 +320,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K10",
@@ -275,7 +333,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K11",
@@ -284,7 +346,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K12",
@@ -293,7 +359,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K13",
@@ -302,7 +372,11 @@ window.DPR_SITES = [
   "sub_county": "Seme",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K14",
@@ -311,7 +385,11 @@ window.DPR_SITES = [
   "sub_county": "Muhoroni",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "K15",
@@ -320,7 +398,11 @@ window.DPR_SITES = [
   "sub_county": "Muhoroni",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U01",
@@ -329,7 +411,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U02",
@@ -338,7 +424,11 @@ window.DPR_SITES = [
   "sub_county": "Soy",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U03",
@@ -347,7 +437,11 @@ window.DPR_SITES = [
   "sub_county": "Ainabkoi",
   "type": "selected",
   "model": "Chronic care model",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U04",
@@ -356,7 +450,11 @@ window.DPR_SITES = [
   "sub_county": "Kapseret",
   "type": "selected",
   "model": "Chronic care model",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U05",
@@ -365,7 +463,11 @@ window.DPR_SITES = [
   "sub_county": "Ainabkoi",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U06",
@@ -374,7 +476,11 @@ window.DPR_SITES = [
   "sub_county": "Kesses",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U07",
@@ -383,7 +489,11 @@ window.DPR_SITES = [
   "sub_county": "Soy",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U08",
@@ -392,7 +502,11 @@ window.DPR_SITES = [
   "sub_county": "Soy",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U09",
@@ -401,7 +515,11 @@ window.DPR_SITES = [
   "sub_county": "Kapseret",
   "type": "selected",
   "model": "Chronic care model",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U10",
@@ -410,7 +528,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U11",
@@ -419,7 +541,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U12",
@@ -428,7 +554,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U13",
@@ -437,7 +567,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U14",
@@ -446,7 +580,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U15",
@@ -455,7 +593,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Mar 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "N01",
@@ -464,7 +606,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru West",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level5",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N02",
@@ -473,7 +619,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru East",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N03",
@@ -482,7 +632,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru West",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "reported",
+  "ownership": "fbo_ngo"
  },
  {
   "id": "N04",
@@ -491,7 +645,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru East",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "reported",
+  "ownership": "private"
  },
  {
   "id": "N05",
@@ -500,7 +658,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru West",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N06",
@@ -509,7 +671,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru East",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N07",
@@ -518,7 +684,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru East",
   "type": "selected",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N08",
@@ -527,7 +697,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru West",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N09",
@@ -536,7 +710,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru North",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N10",
@@ -545,7 +723,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru North",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "fbo_ngo"
  },
  {
   "id": "N11",
@@ -554,7 +736,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru North",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N12",
@@ -563,7 +749,11 @@ window.DPR_SITES = [
   "sub_county": "Nakuru West",
   "type": "selected",
   "model": "Co-location",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "N13",
@@ -572,7 +762,11 @@ window.DPR_SITES = [
   "sub_county": "Njoro",
   "type": "selected",
   "model": "Partial – HRH only (CCC physically separate)",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "fbo_ngo"
  },
  {
   "id": "N14",
@@ -581,7 +775,11 @@ window.DPR_SITES = [
   "sub_county": "Gilgil",
   "type": "selected",
   "model": "Partial – HRH only (CCC physically separate)",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "reported",
+  "ownership": "fbo_ngo"
  },
  {
   "id": "N15",
@@ -590,7 +788,11 @@ window.DPR_SITES = [
   "sub_county": "Gilgil",
   "type": "selected",
   "model": "Partial – HRH only (CCC physically separate)",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "KR1",
@@ -599,7 +801,11 @@ window.DPR_SITES = [
   "sub_county": "Muhoroni",
   "type": "reserve",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "UR1",
@@ -608,7 +814,11 @@ window.DPR_SITES = [
   "sub_county": "Soy",
   "type": "reserve",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "UR2",
@@ -617,7 +827,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "reserve",
   "model": "Co-location",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "UR3",
@@ -626,7 +840,11 @@ window.DPR_SITES = [
   "sub_county": "Soy",
   "type": "reserve",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "Feb 2025",
+  "mfl": "",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "NR1",
@@ -635,7 +853,11 @@ window.DPR_SITES = [
   "sub_county": "Njoro",
   "type": "reserve",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "NR2",
@@ -644,7 +866,11 @@ window.DPR_SITES = [
   "sub_county": "Rongai",
   "type": "reserve",
   "model": "Integrated OPD / full integration",
-  "mfl": ""
+  "start": "not in site list",
+  "mfl": "",
+  "keph": "level4",
+  "keph_source": "reported",
+  "ownership": "public"
  },
  {
   "id": "NB01",
@@ -653,7 +879,11 @@ window.DPR_SITES = [
   "sub_county": "Kibra",
   "type": "selected",
   "model": "not in site list",
-  "mfl": "13028"
+  "start": "not in site list",
+  "mfl": "13028",
+  "keph": "level3",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "NB02",
@@ -662,7 +892,11 @@ window.DPR_SITES = [
   "sub_county": "Embakasi South",
   "type": "selected",
   "model": "not in site list",
-  "mfl": "23414"
+  "start": "not in site list",
+  "mfl": "23414",
+  "keph": "level2",
+  "keph_source": "inferred from name",
+  "ownership": ""
  },
  {
   "id": "U16",
@@ -671,7 +905,11 @@ window.DPR_SITES = [
   "sub_county": "Moiben",
   "type": "selected",
   "model": "not in site list",
-  "mfl": "14519"
+  "start": "not in site list",
+  "mfl": "14519",
+  "keph": "level2",
+  "keph_source": "reported",
+  "ownership": "public"
  }
 ];
 </script>
@@ -811,14 +1049,74 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
     return { hf, pf, pl, kii };
   }
 
-  // ---------------------------------------------------------------- filters
+  // ---------------------------------------------------------------- facility demographics
+  const LEVELS = CODES.hf.lists.keph_level || {}, OWNS = CODES.hf.lists.ownership || {};
+  const modelGroup = m => { m = String(m || "").toLowerCase();
+    return /full|opd/.test(m) ? "Integrated OPD / full integration" : /co-?location/.test(m) ? "Co-location"
+      : /chronic/.test(m) ? "Chronic care model" : /partial|hrh/.test(m) ? "Partial – HRH only" : "Not on site list"; };
+  /** Facility profile: site list, overridden by what was recorded in the HF assessment. */
+  function profileOf(s) {
+    const hf = RAW.hf.find(r => r._site === s.id) || {};
+    return { ...s,
+      keph: hf.keph_level || s.keph, keph_src: hf.keph_level ? "HF assessment" : s.keph ? `site list (${s.keph_source})` : "",
+      ownership: hf.ownership || s.ownership, own_src: hf.ownership ? "HF assessment" : s.ownership ? "site list" : "",
+      mfl: hf.mfl_code || s.mfl, b15: hf.b15 || "", group: modelGroup(s.model) };
+  }
+  const F = id => $(id).value;
+  function siteMatch(s) {
+    const p = profileOf(s);
+    return (!F("#f-county") || s.county === F("#f-county")) && (!F("#f-sub") || s.sub_county === F("#f-sub"))
+      && (!F("#f-fac") || s.id === F("#f-fac")) && (!F("#f-type") || s.type === F("#f-type"))
+      && (!F("#f-level") || p.keph === F("#f-level")) && (!F("#f-own") || (p.ownership || "unknown") === F("#f-own"))
+      && (!F("#f-model") || p.group === F("#f-model"));
+  }
+  const anySiteFilter = () => ["#f-county", "#f-sub", "#f-fac", "#f-type", "#f-level", "#f-own", "#f-model"].some(id => F(id));
   function filtered() {
-    const c = $("#f-county").value, t = $("#f-type").value, coh = $("#f-cohort").value;
-    const keep = r => { const s = SITE[r._site]; if (!s) return !c && !t; return (!c || s.county === c) && (!t || s.type === t); };
+    const coh = F("#f-cohort"), ok = new Set(SITES.filter(siteMatch).map(s => s.id));
+    const keep = r => SITE[r._site] ? ok.has(r._site) : !anySiteFilter();
     return { hf: RAW.hf.filter(keep), pf: RAW.pf.filter(keep), kii: RAW.kii.filter(keep),
       pl: RAW.pl.filter(r => keep(r) && (!coh || r.cohort === coh)) };
   }
-  const sitesInScope = () => SITES.filter(s => (!$("#f-county").value || s.county === $("#f-county").value) && (!$("#f-type").value || s.type === $("#f-type").value));
+  const sitesInScope = () => SITES.filter(siteMatch);
+
+  /** Fills the sub-county and facility lists so they follow the county (and sub-county) chosen. */
+  function cascade() {
+    const c = F("#f-county"), sc = F("#f-sub"), fac = F("#f-fac");
+    const subs = [...new Set(SITES.filter(s => !c || s.county === c).map(s => s.sub_county))].sort();
+    $("#f-sub").innerHTML = `<option value="">All sub-counties</option>` + subs.map(x => `<option${x === sc ? " selected" : ""}>${esc(x)}</option>`).join("");
+    if (sc && !subs.includes(sc)) $("#f-sub").value = "";
+    const facs = SITES.filter(s => (!c || s.county === c) && (!F("#f-sub") || s.sub_county === F("#f-sub")));
+    $("#f-fac").innerHTML = `<option value="">All facilities (${facs.length})</option>` + facs.map(s =>
+      `<option value="${s.id}"${s.id === fac ? " selected" : ""}>${s.id} – ${esc(s.name)}${s.type === "reserve" ? " (reserve)" : ""}</option>`).join("");
+    if (fac && !facs.some(s => s.id === fac)) $("#f-fac").value = "";
+  }
+
+  /** Panel above the tabs: one facility's profile, or the demographics of the facilities selected. */
+  function renderProfile(D) {
+    const scope = sitesInScope().map(profileOf), box = $("#profile");
+    if (!scope.length) { box.innerHTML = `<div class="empty">No facility matches these filters.</div>`; return; }
+    if (F("#f-fac")) {
+      const p = scope[0], n = k => D[k].length;
+      box.innerHTML = `<h2>${p.id} – ${esc(p.name)}</h2><dl>
+        <div><dt>County / sub-county</dt><dd>${p.county} / ${esc(p.sub_county)}</dd></div>
+        <div><dt>MFL code</dt><dd>${p.mfl || "–"}</dd></div>
+        <div><dt>Facility level (KEPH)</dt><dd>${LEVELS[p.keph] || "–"}</dd><dt>${p.keph_src}</dt></div>
+        <div><dt>Ownership</dt><dd>${OWNS[p.ownership] || "Not yet recorded"}</dd><dt>${p.own_src}</dt></div>
+        <div><dt>Model on site list</dt><dd>${esc(p.model)}</dd><dt>start ${esc(p.start)}</dt></div>
+        <div><dt>Model from HF assessment (B15)</dt><dd>${p.b15 ? label("hf", "b15", p.b15) : "Not yet assessed"}</dd></div>
+        <div><dt>Site type</dt><dd>${p.type === "reserve" ? "Reserve" : "Selected"}</dd></div>
+        <div><dt>Forms received</dt><dd>HF ${n("hf")} · Records ${n("pl")} · KII ${n("kii")}</dd></div></dl>`;
+      return;
+    }
+    const tally = (f, lab) => Object.entries(scope.reduce((m, p) => { const k = f(p) || "Not recorded"; m[k] = (m[k] || 0) + 1; return m; }, {}))
+      .sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="chip">${esc(lab ? (lab[k] || k) : k)}: ${v}</span>`).join("");
+    box.innerHTML = `<h2>${scope.length} facilit${scope.length === 1 ? "y" : "ies"} in this selection</h2>
+      <div class="chipgroup"><b>County</b><span class="chips">${tally(p => p.county)}</span></div>
+      <div class="chipgroup"><b>Level</b><span class="chips">${tally(p => p.keph, LEVELS)}</span></div>
+      <div class="chipgroup"><b>Ownership</b><span class="chips">${tally(p => p.ownership, OWNS)}</span></div>
+      <div class="chipgroup"><b>Model (site list)</b><span class="chips">${tally(p => p.group)}</span></div>
+      <div class="chipgroup"><b>Type</b><span class="chips">${tally(p => p.type === "reserve" ? "Reserve" : "Selected")}</span></div>`;
+  }
 
   // ---------------------------------------------------------------- charts
   const endLabels = { id: "endLabels", afterDatasetsDraw(ch, _a, o) {
@@ -1045,6 +1343,7 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
   function banner(msg, err) { const b = $("#banner"); b.hidden = !msg; b.className = "banner" + (err ? " error" : ""); b.innerHTML = msg || ""; }
   function render() {
     const D = filtered();
+    renderProfile(D);
     ({ progress: renderProgress, facility: renderFacility, patients: renderPatients, flow: renderFlow, about: renderAbout })[activeTab](D);
   }
   async function refresh() {
@@ -1062,7 +1361,15 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
       activeTab = b.dataset.tab; document.querySelectorAll(".tab").forEach(t => t.hidden = t.id !== "tab-" + activeTab); render();
     }));
-    ["#f-county", "#f-type", "#f-cohort"].forEach(s => $(s).addEventListener("change", render));
+    Object.entries(LEVELS).filter(([k]) => k !== "other").forEach(([k, l]) => $("#f-level").insertAdjacentHTML("beforeend", `<option value="${k}">${esc(l)}</option>`));
+    Object.entries(OWNS).forEach(([k, l]) => $("#f-own").insertAdjacentHTML("beforeend", `<option value="${k}">${esc(l.replace(/ \(specify.*$/, ""))}</option>`));
+    $("#f-own").insertAdjacentHTML("beforeend", `<option value="unknown">Not yet recorded</option>`);
+    [...new Set(SITES.map(s => modelGroup(s.model)))].forEach(m => $("#f-model").insertAdjacentHTML("beforeend", `<option>${esc(m)}</option>`));
+    cascade();
+    $("#f-county").addEventListener("change", () => { $("#f-sub").value = ""; $("#f-fac").value = ""; cascade(); render(); });
+    $("#f-sub").addEventListener("change", () => { $("#f-fac").value = ""; cascade(); render(); });
+    ["#f-fac", "#f-level", "#f-own", "#f-model", "#f-type", "#f-cohort"].forEach(s => $(s).addEventListener("change", render));
+    $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); cascade(); render(); });
     $("#reload").addEventListener("click", refresh);
     try { const t = localStorage.getItem("dpr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
     $("#theme").addEventListener("click", () => {
