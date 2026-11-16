@@ -1173,14 +1173,7 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
         <div><dt>Forms received</dt><dd>HF ${n("hf")} · Records ${n("pl")} · KII ${n("kii")}</dd></div></dl>`;
       return;
     }
-    const tally = (f, lab) => Object.entries(scope.reduce((m, p) => { const k = f(p) || "Not recorded"; m[k] = (m[k] || 0) + 1; return m; }, {}))
-      .sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="chip">${esc(lab ? (lab[k] || k) : k)}: ${v}</span>`).join("");
-    box.innerHTML = `<h2>${scope.length} facilit${scope.length === 1 ? "y" : "ies"} in this selection</h2>
-      <div class="chipgroup"><b>County</b><span class="chips">${tally(p => p.county)}</span></div>
-      <div class="chipgroup"><b>Level</b><span class="chips">${tally(p => p.keph, LEVELS)}</span></div>
-      <div class="chipgroup"><b>Ownership</b><span class="chips">${tally(p => p.ownership, OWNS)}</span></div>
-      <div class="chipgroup"><b>Model (site list)</b><span class="chips">${tally(p => p.group)}</span></div>
-      <div class="chipgroup"><b>Type</b><span class="chips">${tally(p => p.type === "reserve" ? "Reserve" : "Selected")}</span></div>`;
+    box.innerHTML = "";                                   // no summary panel when no single facility is chosen
   }
 
   // ---------------------------------------------------------------- charts
