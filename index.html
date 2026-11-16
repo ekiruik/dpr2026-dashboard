@@ -153,8 +153,6 @@ License: MIT
     <label>Facility level (KEPH) <select id="f-level"><option value="">All levels</option></select></label>
     <label>Ownership <select id="f-own"><option value="">All ownership</option></select></label>
     <label>Integration model <select id="f-model"><option value="">All models</option></select></label>
-    <label>Site type <select id="f-type"><option value="">Selected + reserves</option><option value="selected">Selected only</option><option value="reserve">Reserves only</option></select></label>
-    <label>Cohort <select id="f-cohort"><option value="">Both cohorts</option><option value="1">12-month (ART start Jun–Sep 2025)</option><option value="2">24-month (ART start Jun–Sep 2024)</option></select></label>
     <button id="f-clear" type="button" class="clear">Clear filters</button>
   </section>
   <section id="profile" class="profile"></section>
@@ -1062,7 +1060,7 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
       ownership: hf.ownership || s.ownership, own_src: hf.ownership ? "HF assessment" : s.ownership ? "site list" : "",
       mfl: hf.mfl_code || s.mfl, b15: hf.b15 || "", group: modelGroup(s.model) };
   }
-  const F = id => $(id).value;
+  const F = id => ($(id) ? $(id).value : "");
   function siteMatch(s) {
     const p = profileOf(s);
     return (!F("#f-county") || s.county === F("#f-county")) && (!F("#f-sub") || s.sub_county === F("#f-sub"))
@@ -1368,7 +1366,7 @@ window.DPR_CODES = {"hf": {"lists": {"yesno": {"yes": "Yes", "no": "No"}, "ynu":
     cascade();
     $("#f-county").addEventListener("change", () => { $("#f-sub").value = ""; $("#f-fac").value = ""; cascade(); render(); });
     $("#f-sub").addEventListener("change", () => { $("#f-fac").value = ""; cascade(); render(); });
-    ["#f-fac", "#f-level", "#f-own", "#f-model", "#f-type", "#f-cohort"].forEach(s => $(s).addEventListener("change", render));
+    ["#f-fac", "#f-level", "#f-own", "#f-model"].forEach(s => $(s).addEventListener("change", render));
     $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); cascade(); render(); });
     $("#reload").addEventListener("click", refresh);
     try { const t = localStorage.getItem("dpr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
