@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPR 2026 Assessment Dashboard</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/vendor/papaparse.min.js"></script>
+<script src="assets/vendor/chart.umd.js"></script>
+</head>
+<body>
+<div class="viz-root">
+  <header class="top">
+    <div>
+      <h1 id="title">DPR 2026 Integration Assessment</h1>
+      <p class="sub">Kenya Data Performance Review – HIV service integration and sustainability · Kisumu, Nakuru, Uasin Gishu</p>
+    </div>
+    <div class="status">
+      <span id="mode-badge" class="badge"></span>
+      <span id="updated" class="muted"></span>
+      <button id="reload" type="button">Refresh data</button>
+      <button id="theme" type="button">Dark / light</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="progress" aria-selected="true">Field progress</button>
+    <button role="tab" data-tab="facility">Facility integration</button>
+    <button role="tab" data-tab="patients">Patient outcomes</button>
+    <button role="tab" data-tab="flow">Patient flow &amp; KII</button>
+    <button role="tab" data-tab="about">About &amp; definitions</button>
+  </nav>
+
+  <section class="filters">
+    <label>County <select id="f-county"><option value="">All counties</option></select></label>
+    <label>Site type <select id="f-type"><option value="">Selected + reserves</option><option value="selected">Selected only</option><option value="reserve">Reserves only</option></select></label>
+    <label>Cohort <select id="f-cohort"><option value="">Both cohorts</option><option value="1">12-month (ART start Jun–Sep 2025)</option><option value="2">24-month (ART start Jun–Sep 2024)</option></select></label>
+  </section>
+
+  <main>
+    <section id="tab-progress" class="tab"></section>
+    <section id="tab-facility" class="tab" hidden></section>
+    <section id="tab-patients" class="tab" hidden></section>
+    <section id="tab-flow" class="tab" hidden></section>
+    <section id="tab-about" class="tab" hidden></section>
+  </main>
+  <footer class="muted">Ministry of Health – NASCOP · DPR 2026. Data from ODK submissions via Google Sheets. No client identifiers are displayed.</footer>
+</div>
+<script src="config.js"></script>
+<script src="assets/sites.js"></script>
+<script src="assets/codes.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
