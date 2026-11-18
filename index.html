@@ -1997,50 +1997,27 @@ window.DPR_EMR_MAP = {
       const have = Object.values(o.dim).filter(Boolean); o.score = have.length ? Math.round(10 * have.reduce((a, s) => a + 100 * s[0] / s[1], 0) / have.length) / 10 : null; });
     return out;
   }
-  /** Data quality tab (Patient-Level): completeness of every question, validity, consistency. */
+  /** Data quality tab (Patient-Level): questions that are less than 100% complete. */
   function renderDQ(D) {
-    const o = dqRun(D).pl, t = "pl", P = D.pl, Qm = CODES.pl.q || {};
-    const st3 = (v, a = 95, b = 85) => v == null ? "–" : status(v >= a ? "good" : v >= b ? "warning" : "critical", v + "%");
+    const o = dqRun(D).pl, P = D.pl, Qm = CODES.pl.q || {}, C = o.qd.Completeness || {};
+    const st3 = v => status(v >= 95 ? "good" : v >= 85 ? "warning" : "critical", v + "%");
     const isND = (v, val) => { const d = CODES.pl.vars[v]; return d && /not documented/i.test(CODES.pl.lists[d.list]?.[val] || ""); };
-    const C = o.qd.Completeness || {}, V = o.qd.Validity || {};
-    // 1. completeness – every question, in form order
-    let k = 0;
-    const compRows = Object.entries(Qm).filter(([v]) => !NOT_CHECKED.has(v)).map(([v, m]) => {
-      const answered = P.filter(r => !blank(r[v])).length, nd = P.filter(r => isND(v, r[v])).length, c = C[v];
-      // expected = records where a completeness rule applies; blanks = rule says it should be filled but it is empty
-      const exp = c ? c.N.size : null, miss = c ? [...c.B].filter(r => blank(r[v])).length : null;
-      const p = exp ? Math.round(1000 * (exp - miss) / exp) / 10 : null;
-      return [++k, esc(m.l), `<code>${esc(v)}</code>`, m.a ? "Always" : "When applicable (skip logic)", exp == null ? "–" : exp.toLocaleString(),
-        answered.toLocaleString(), miss == null ? "–" : (miss ? `<b>${miss.toLocaleString()}</b>` : "0"), nd ? nd.toLocaleString() : "0",
-        exp ? st3(p) : `<span class="muted">${answered ? "answered when asked" : "not answered in any record"}</span>`];
-    });
-    // 2. validity – questions with a validity check
-    const vRows = Object.entries(V).map(([v, x]) => ({ v, n: x.N.size, b: x.B.size, ex: x.ex, how: [...x.how] }))
-      .sort((a, b) => b.b - a.b || (Object.keys(Qm).indexOf(a.v) - Object.keys(Qm).indexOf(b.v)));
-    const vType = h => h.map(x => /^MFL/.test(x) ? "MFL = 5 digits" : /^Age/.test(x) ? "Age 0–100" : /site list/.test(x) ? "On study site list"
-      : /ODK code/.test(x) ? "Valid ODK code" : /date/i.test(x) ? "Real date, not in future" : /whole number/.test(x) ? "Whole number ≥ 0" : x).join("; ");
-    // 3. consistency – one row per rule
-    const cRows = o.checks.filter(x => x.dim === "Consistency").sort((a, b) => b.bad - a.bad);
+    const order = Object.keys(Qm);
+    // expected = records where a completeness rule says the question must be answered; missing = expected but blank
+    const rows = Object.entries(C).filter(([v]) => !(v in PSEUDO) && !NOT_CHECKED.has(v)).map(([v, c]) => {
+      const exp = c.N.size, miss = [...c.B].filter(r => blank(r[v])).length;
+      return { v, exp, miss, ans: P.filter(r => !blank(r[v])).length, nd: P.filter(r => isND(v, r[v])).length, p: exp ? Math.round(1000 * (exp - miss) / exp) / 10 : 100 };
+    }).filter(x => x.exp && x.miss).sort((a, b) => a.p - b.p || order.indexOf(a.v) - order.indexOf(b.v));
     $("#tab-dq").innerHTML = `
-      <p class="note" style="margin-top:4px">${P.length.toLocaleString()} Patient-Level records (ODK + EMR, as filtered above). Red &lt; 85%, amber 85–94%, green ≥ 95%.</p>
-      <h2>1. Completeness – all questions</h2>
-      <div class="card">${table(["#", "Question", "Variable", "Asked", "Expected", "Answered", "Missing (blank)", "Not documented", "Completeness"], compRows, [0, 4, 5, 6, 7, 8])}
-        <p class="note"><b>Expected</b> = records where the question must be answered (always-asked questions, and follow-up items that are due, e.g. 12-month status when the
-          client was in care at 6 months, exit dates when the status needs one, VL result when VL was done). <b>Missing</b> = expected but blank.
-          <b>Not documented</b> = answered "Not documented" (information not in the records). Completeness = (expected − missing) ÷ expected.
-          Skip-logic questions without a rule show how many records answered them.</p></div>
-      <h2>2. Validity</h2>
-      <div class="card">${vRows.length ? table(["Question", "Variable", "Rule", "Answers checked", "Invalid", "Validity", "Examples of invalid answers"],
-        vRows.map(x => [esc(qLabel(t, x.v)), `<code>${esc(x.v)}</code>`, vType(x.how), x.n.toLocaleString(), x.b ? `<b>${x.b}</b>` : "0", st3(x.n ? Math.round(1000 * (x.n - x.b) / x.n) / 10 : null), esc(x.ex.join("; "))]), [3, 4, 5])
-        : `<div class="empty">No answers to check yet.</div>`}
-        <p class="note">Each filled-in answer is checked: coded answers must be one of the question's ODK codes, dates must be real dates and not in the future,
-          numbers whole and ≥ 0, age 0–100, MFL 5 digits, facility on the study site list. Questions with invalid answers are listed first.</p></div>
-      <h2>3. Consistency</h2>
-      <div class="card">${cRows.length ? table(["Rule", "Question(s)", "Records checked", "Inconsistent", "Consistency", "Examples"],
-        cRows.map(x => [esc(x.name), x.vars.slice(0, 3).map(v => `<code>${esc(v)}</code>`).join(" ") + (x.vars.length > 3 ? ` +${x.vars.length - 3}` : ""),
-          x.n.toLocaleString(), x.bad ? `<b>${x.bad}</b>` : "0", x.n ? st3(Math.round(1000 * (x.n - x.bad) / x.n) / 10) : "<span class=\"muted\">not applicable</span>", esc(x.ex.join("; "))]), [2, 3, 4])
-        : `<div class="empty">No rules to check.</div>`}
-        <p class="note">Each rule compares answers that must agree (dates in order, cohort window, skip logic, sex-specific items). Records checked = records the rule applies to.</p></div>`;
+      <h2 style="margin-top:4px">Completeness – questions below 100%</h2>
+      <div class="card">${rows.length ? table(["#", "Question", "Variable", "Asked", "Expected", "Answered", "Missing (blank)", "Not documented", "Completeness"],
+        rows.map((x, i) => [i + 1, esc(qLabel("pl", x.v)), `<code>${esc(x.v)}</code>`, Qm[x.v]?.a ? "Always" : "When applicable (skip logic)",
+          x.exp.toLocaleString(), x.ans.toLocaleString(), `<b>${x.miss.toLocaleString()}</b>`, x.nd.toLocaleString(), st3(x.p)]), [0, 4, 5, 6, 7, 8])
+        : `<div class="empty">All questions are 100% complete for this selection.</div>`}
+        <p class="note">${P.length.toLocaleString()} Patient-Level records (ODK + EMR, as filtered above). Lowest completeness first; red &lt; 85%, amber 85–94%, green 95–99.9%.
+          <b>Expected</b> = records where the question must be answered (always-asked questions, and follow-up items that are due, e.g. 12-month status when in care at 6 months,
+          exit dates when the status needs one, VL result when VL was done). <b>Missing</b> = expected but blank. <b>Not documented</b> = answered "Not documented".
+          Completeness = (expected − missing) ÷ expected.</p></div>`;
   }
 
   // ---------------------------------------------------------------- tab: KII
