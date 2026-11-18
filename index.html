@@ -2020,11 +2020,7 @@ window.DPR_EMR_MAP = {
         rows.map((x, i) => [i + 1, esc(qLabel("pl", x.v)), `<code>${esc(x.v)}</code>`, x.m.a ? "Always" : "When applicable (skip logic)",
           x.n.toLocaleString(), x.nul ? `<b>${x.nul.toLocaleString()}</b>` : "0", x.nd ? `<b>${x.nd.toLocaleString()}</b>` : "0", x.ok.toLocaleString(), st3(x.p)]), [0, 4, 5, 6, 7, 8])
         : `<div class="empty">Every question is 100% complete (no null and no "Not documented") for this selection.</div>`}
-        <p class="note">${P.length.toLocaleString()} Patient-Level records (ODK + EMR, as filtered above). Every question in the form is checked; only those below 100% are listed, lowest first.
-          Red &lt; 85%, amber 85–94%, green 95–99.9%. <b>Records checked</b> = records where the question is due: all records for always-asked questions; for follow-up items,
-          the records where the form requires them (e.g. 12-month status when in care at 6 months, exit dates when the status needs one, VL result when VL was done);
-          for other skip-logic questions, the records that answered them. <b>Null</b> = due but blank. <b>Not documented</b> = answered "Not documented".
-          Completeness = (records checked − null − not documented) ÷ records checked.</p></div>`;
+</div>`;
   }
 
   // ---------------------------------------------------------------- tab: KII
