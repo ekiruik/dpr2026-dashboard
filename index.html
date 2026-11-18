@@ -2015,7 +2015,7 @@ window.DPR_EMR_MAP = {
       return { v, m, n, nul, nd, ok, p: n ? Math.round(1000 * ok / n) / 10 : null };
     }).filter(x => x.n && x.ok < x.n).sort((a, b) => a.p - b.p || order.indexOf(a.v) - order.indexOf(b.v));
     $("#tab-dq").innerHTML = `
-      <h2 style="margin-top:4px">Completeness – questions below 100% (null or "Not documented")</h2>
+      <h2 style="margin-top:4px">Completeness")</h2>
       <div class="card">${rows.length ? table(["#", "Question", "Variable", "Asked", "Records checked", "Null (blank)", "Not documented", "Complete", "Completeness"],
         rows.map((x, i) => [i + 1, esc(qLabel("pl", x.v)), `<code>${esc(x.v)}</code>`, x.m.a ? "Always" : "When applicable (skip logic)",
           x.n.toLocaleString(), x.nul ? `<b>${x.nul.toLocaleString()}</b>` : "0", x.nd ? `<b>${x.nd.toLocaleString()}</b>` : "0", x.ok.toLocaleString(), st3(x.p)]), [0, 4, 5, 6, 7, 8])
