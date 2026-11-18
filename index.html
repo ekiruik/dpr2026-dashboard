@@ -138,6 +138,13 @@ button.primary:disabled { opacity: 0.6; cursor: wait; }
 .pwgrid input { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); }
 .npout { width: 100%; height: 90px; margin-top: 8px; font: 12px Consolas, monospace; border-radius: 8px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); padding: 8px; }
 
+.sources { text-align: right; font-size: 12.5px; margin-top: 4px; }
+.sources .src-bad { color: var(--danger, #b42318); }
+@media (max-width: 700px) { .sources { text-align: left; } }
+
+.kmbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.kmbar select { margin-left: 6px; }
+
 </style>
 <!-- PapaParse 5.4.1 (MIT) -->
 <script>/* @license
@@ -201,6 +208,7 @@ License: MIT
     <button id="logout" type="button" hidden>Log out</button>
   </div>
 
+  <div id="sources" class="sources muted"></div>
   <div id="banner" class="banner" hidden></div>
 
   <nav class="tabs" role="tablist">
@@ -218,6 +226,7 @@ License: MIT
     <label>Facility level (KEPH) <select id="f-level"><option value="">All levels</option></select></label>
     <label>Ownership <select id="f-own"><option value="">All ownership</option></select></label>
     <label>Integration model <select id="f-model"><option value="">All models</option></select></label>
+    <label>Patient data source <select id="f-src"><option value="">ODK + EMR</option><option value="ODK">ODK Central only</option><option value="EMR">EMR files only</option></select></label>
     <label>Pilot sites (Nairobi) <select id="f-pilot"><option value="exclude">Exclude pilot</option><option value="include">Include pilot</option><option value="only">Pilot only</option></select></label>
     <button id="f-clear" type="button" class="clear">Clear filters</button>
   </section>
@@ -1249,7 +1258,7 @@ window.DPR_EMR_MAP = {
   const SITE = Object.fromEntries(SITES.map(s => [s.id, s]));
   const FORMS = { hf: "Health Facility", pl: "Patient-Level", kii: "KII" };
   const PRIVATE = new Set(["roc_id", "dob", "devicephonenum", "phonenumber", "username", "data_collector_id"]);
-  let RAW = { hf: [], pl: [], kii: [] }, DEMO = false, charts = {}, activeTab = "progress";
+  let RAW = { hf: [], pl: [], kii: [] }, SYNC = null, DEMO = false, charts = {}, activeTab = "progress";
 
   // ---------------------------------------------------------------- utils
   const $ = s => document.querySelector(s);
@@ -1330,6 +1339,13 @@ window.DPR_EMR_MAP = {
         RAW.pl = RAW.pl.map(r => ({ ...r, _source: r._source || "ODK" })).concat(rows);
       } catch (e) { errs.push(`EMR extract (tab "${CFG.tabs.pl_emr}"): ${e.message}`); }
     }
+    // last ODK Central sync (written by the Apps Script to the "_sync_log" tab)
+    SYNC = null;
+    try {
+      const res = await fetch(`https://docs.google.com/spreadsheets/d/${CFG.sheetId}/gviz/tq?tqx=out:csv&headers=0&sheet=_sync_log`, { cache: "no-store" });
+      const t = await res.text();
+      if (res.ok && !/^\s*</.test(t)) { const r = Papa.parse(t).data.find(x => x[1]); if (r) SYNC = { when: r[0], msg: r[1] }; }
+    } catch (e) { /* log tab not readable – leave the sync line out */ }
     if (errs.length) banner(`Some data could not be loaded – ${errs.join("; ")}. Check the tab names in config.js and that the sheet is shared "Anyone with the link – Viewer".`, true);
   }
 
@@ -1399,6 +1415,15 @@ window.DPR_EMR_MAP = {
           tb_lam_test: ahd ? pick(["1", "1", "2"]) : "", xpert_mtb_test: ahd ? pick(["1", "2"]) : "", crag_test: ahd ? pick(["1", "1", "2"]) : "",
           tpt_eligible: pick(["1", "1", "2"]), dsd_model_6m: s6 === "1" ? pick(["1", "2", "3", "5", "8"]) : "" };
         r.tpt_introduced = r.tpt_eligible === "1" ? pick(["1", "1", "2"]) : "";
+        // dates for the time-to-exit (Kaplan–Meier) curve
+        const init = new Date(cohort === "1" ? 2025 : 2024, 5 + Math.floor(rnd() * 4), 1 + Math.floor(rnd() * 28));
+        const iso = (mo) => { const x = new Date(init.getTime() + mo * 30.4375 * 864e5); return x.toISOString().slice(0, 10); };
+        r.art_init_date = iso(0);
+        [["6m", 0, 6], ["12m", 6, 12], ["24m", 12, 24]].forEach(([t, a, z]) => { const st = r[`care_status_${t}`]; if (!st) return;
+          const when = iso(a + rnd() * (z - a));
+          if (st === "1") r[`last_visit_date_${t}`] = iso(z - rnd() * 2);
+          else if (st === "2") r[`ltfu_date_${t}`] = when; else if (st === "3") r[`art_stop_date_${t}`] = when;
+          else if (st === "4") r[`transfer_date_${t}`] = when; else if (st === "5") r[`death_date_${t}`] = when; });
         ["6m", "12m", "24m"].forEach(t => { r[`vl_done_${t}`] = vl(r[`care_status_${t}`]); r[`vl_result_${t}`] = r[`vl_done_${t}`] === "1" ? pick(["1", "1", "1", "1", "2", "3"]) : ""; });
         pl.push(r);
       }
@@ -1454,7 +1479,8 @@ window.DPR_EMR_MAP = {
         && (!F("#f-own") || (r.hf_ownership || p.ownership || "unknown") === F("#f-own")); };
     const okLoc = new Set(SITES.filter(s => pilotOK(s) && (!F("#f-county") || s.county === F("#f-county")) && (!F("#f-sub") || s.sub_county === F("#f-sub"))
       && (!F("#f-fac") || s.id === F("#f-fac")) && (!F("#f-model") || profileOf(s).group === F("#f-model"))).map(s => s.id));
-    const keepPl = r => (SITE[r._site] ? okLoc.has(r._site) : !anySiteFilter()) && plDemo(r);
+    const srcF = F("#f-src"), srcOK = r => !srcF || ((r.data_source || r._source || "ODK") === srcF);
+    const keepPl = r => (SITE[r._site] ? okLoc.has(r._site) : !anySiteFilter()) && plDemo(r) && srcOK(r);
     return { hf: RAW.hf.filter(keep), kii: RAW.kii.filter(keep),
       pl: RAW.pl.filter(r => keepPl(r) && (!coh || r.cohort === coh)) };
   }
@@ -1637,6 +1663,126 @@ window.DPR_EMR_MAP = {
     const te = rows.filter(r => r.tpt_eligible === "1"); o.tpt = [te.filter(r => r.tpt_introduced === "1").length, te.length];
     return o;
   }
+  // ---------------------------------------------------------------- time to exit from care (Kaplan–Meier)
+  /** Exit = LTFU (not resumed), stopped ART or died; transfer out is censored at the transfer date.
+   *  Time 0 = ART start date; follow-up up to 24 months. Returns {t (months), e (1 = exit, 0 = censored), type}. */
+  const MON = 30.4375, dd = v => { const x = isoDate(v); const t = Date.parse(x); return /^\d{4}-\d{2}-\d{2}$/.test(x) && !isNaN(t) ? t : null; };
+  function exitTime(r) {
+    const t0 = dd(r.art_init_date); if (t0 == null) return null;
+    const m = ms => Math.max(0, (ms - t0) / 864e5 / MON);
+    let last = 0;
+    for (const [t, mo] of [["6m", 6], ["12m", 12], ["24m", 24]]) {
+      const st = r[`care_status_${t}`];
+      if (!st || st === "6") break;                                    // not documented: censor at last known time
+      if (st === "4") { const d = dd(r[`transfer_date_${t}`]); return { t: d ? Math.min(m(d), mo) : mo, e: 0, type: "Transferred out" }; }
+      if (st === "2" && r[`resumed_care_${t}`] === "1") { const d = dd(r[`last_visit_date_${t}`]); last = d ? Math.min(m(d), mo) : mo; continue; }
+      if (st === "2" || st === "3" || st === "5") {
+        const d = dd(r[{ "2": `ltfu_date_${t}`, "3": `art_stop_date_${t}`, "5": `death_date_${t}` }[st]]);
+        return { t: d ? Math.min(m(d), mo) : mo, e: 1, type: { "2": "LTFU", "3": "Stopped ART", "5": "Died" }[st] };
+      }
+      const d = dd(r[`last_visit_date_${t}`]); last = Math.max(last, d ? Math.min(m(d), mo) : mo);
+    }
+    return { t: last, e: 0, type: "Censored" };
+  }
+  /** Kaplan–Meier estimate with Greenwood 95% CI. */
+  function km(obs) {
+    const times = [...new Set(obs.filter(o => o.e).map(o => o.t))].sort((a, b) => a - b);
+    let S = 1, v = 0; const steps = [{ t: 0, S: 1, lo: 1, hi: 1, risk: obs.length }];
+    times.forEach(t => {
+      const n = obs.filter(o => o.t >= t).length, d = obs.filter(o => o.e && o.t === t).length;
+      if (!n) return; S *= 1 - d / n; if (n > d) v += d / (n * (n - d));
+      const se = S * Math.sqrt(v); steps.push({ t, S, lo: Math.max(0, S - 1.96 * se), hi: Math.min(1, S + 1.96 * se), risk: n });
+    });
+    const at = x => { let r = steps[0]; steps.forEach(p => { if (p.t <= x) r = p; }); return r; };
+    return { steps, at, n: obs.length, events: obs.filter(o => o.e).length };
+  }
+  /** Log-rank test across groups (chi-square, df = groups − 1). */
+  function logRank(groups) {
+    const all = groups.flat(), times = [...new Set(all.filter(o => o.e).map(o => o.t))].sort((a, b) => a - b), k = groups.length;
+    if (k < 2 || !times.length) return null;
+    const O = Array(k).fill(0), E = Array(k).fill(0), V = Array.from({ length: k }, () => Array(k).fill(0));
+    times.forEach(t => {
+      const n = groups.map(g => g.filter(o => o.t >= t).length), d = groups.map(g => g.filter(o => o.e && o.t === t).length);
+      const N = n.reduce((a, b) => a + b, 0), Dt = d.reduce((a, b) => a + b, 0); if (N < 2) return;
+      for (let i = 0; i < k; i++) { O[i] += d[i]; E[i] += Dt * n[i] / N;
+        for (let j = 0; j < k; j++) V[i][j] += Dt * (N - Dt) / (N - 1) * (n[i] / N) * ((i === j ? 1 : 0) - n[j] / N); }
+    });
+    const m = k - 1, z = O.slice(0, m).map((o, i) => o - E[i]), A = V.slice(0, m).map(r => r.slice(0, m));
+    // solve A x = z (Gauss) → chi2 = z·x
+    const M = A.map((r, i) => [...r, z[i]]);
+    for (let c = 0; c < m; c++) { let p = c; for (let r = c + 1; r < m; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+      [M[c], M[p]] = [M[p], M[c]]; if (Math.abs(M[c][c]) < 1e-12) return null;
+      for (let r = 0; r < m; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let j = c; j <= m; j++) M[r][j] -= f * M[c][j]; } }
+    const chi = z.reduce((a, zi, i) => a + zi * M[i][m] / M[i][i], 0);
+    return { chi, df: m, p: chiP(chi, m) };
+  }
+  function chiP(x, k) {                                                 // upper tail of chi-square (regularised gamma)
+    if (x <= 0) return 1; const a = k / 2, xx = x / 2;
+    const lg = z => { const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+      let y = z, t = z + 5.5; t -= (z + 0.5) * Math.log(t); let s = 1.000000000190015; c.forEach(ci => s += ci / ++y); return -t + Math.log(2.5066282746310005 * s / z); };
+    if (xx < a + 1) { let sum = 1 / a, del = sum, ap = a; for (let n = 0; n < 200; n++) { ap++; del *= xx / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-10) break; }
+      return 1 - sum * Math.exp(-xx + a * Math.log(xx) - lg(a)); }
+    let b = xx + 1 - a, c = 1e30, d = 1 / b, h = d;
+    for (let i = 1; i < 200; i++) { const an = -i * (i - a); b += 2; d = an * d + b; if (Math.abs(d) < 1e-30) d = 1e-30; c = b + an / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d; const del = d * c; h *= del; if (Math.abs(del - 1) < 1e-10) break; }
+    return Math.exp(-xx + a * Math.log(xx) - lg(a)) * h;
+  }
+  let KM_BY = "cohort";
+  const KM_GROUPS = {
+    none: ["All records", () => "All records"],
+    cohort: ["Cohort", r => r.cohort === "1" ? "12-month cohort (2025)" : r.cohort === "2" ? "24-month cohort (2024)" : null],
+    model: ["Integration model (HF, B15)", r => { const m = r.hf_integration_model || RAW.hf.find(h => h._site === r._site)?.b15; return m ? label("hf", "b15", m) : "Not yet assessed"; }],
+    level: ["Facility level (HF, KEPH)", r => { const k = r.hf_keph_level || (SITE[r._site] ? profileOf(SITE[r._site]).keph : ""); return k ? label("hf", "keph_level", k).replace(/ –.*/, "") : "Unknown"; }],
+    county: ["County", r => SITE[r._site]?.county || "Unknown"],
+    sex: ["Sex", r => r.sex === "1" ? "Male" : r.sex === "2" ? "Female" : null],
+    age: ["Age at ART start", r => { const a = num(r.age); return a == null ? null : a < 15 ? "<15 years" : a < 25 ? "15–24 years" : a < 50 ? "25–49 years" : "50+ years"; }],
+    source: ["Data source", r => (r.data_source || r._source || "ODK") === "EMR" ? "EMR files" : "ODK Central"]
+  };
+  function kmSection() {
+    return `<h2>Time to exit from care (Kaplan–Meier)</h2>
+      <div class="card">
+        <div class="kmbar"><label>Compare by <select id="km-by">${Object.entries(KM_GROUPS).map(([k, [l]]) => `<option value="${k}"${k === KM_BY ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+          <span id="km-test" class="muted"></span></div>
+        <div class="chart tall"><canvas id="c-km" role="img" aria-label="Kaplan–Meier curve of retention on ART"></canvas></div>
+        <p class="note">Proportion still in care (not exited) by months since ART start. <b>Exit</b> = LTFU not resumed, stopped ART or died, at the documented date
+          (the follow-up time point if the date is missing). Transfer out is censored at the transfer date; records are otherwise censored at the last documented visit. Shaded band: 95% CI (Greenwood).</p>
+        <div id="km-table"></div>
+      </div>`;
+  }
+  function renderKM(P) {
+    const def = KM_GROUPS[KM_BY], g = {}; let noDate = 0;
+    P.forEach(r => { const k = def[1](r); if (k == null) return; const o = exitTime(r); if (!o) { noDate++; return; } (g[k] = g[k] || []).push(o); });
+    const keys = Object.keys(g).sort((a, b) => g[b].length - g[a].length).slice(0, 8), ser = SER(), fits = keys.map(k => km(g[k]));
+    const ds = [];
+    keys.forEach((k, i) => {
+      const pts = [], lo = [], hi = []; fits[i].steps.forEach((p, j, a) => {
+        if (j) { pts.push({ x: p.t, y: a[j - 1].S * 100 }); lo.push({ x: p.t, y: a[j - 1].lo * 100 }); hi.push({ x: p.t, y: a[j - 1].hi * 100 }); }
+        pts.push({ x: p.t, y: p.S * 100 }); lo.push({ x: p.t, y: p.lo * 100 }); hi.push({ x: p.t, y: p.hi * 100 }); });
+      const tmax = Math.max(...g[k].map(o => o.t), 0), end = fits[i].steps[fits[i].steps.length - 1];
+      [pts, lo, hi].forEach((a, j) => a.push({ x: tmax, y: (j === 0 ? end.S : j === 1 ? end.lo : end.hi) * 100 }));
+      const c = ser[i % 8];
+      ds.push({ label: `${k} (n=${g[k].length})`, data: pts, borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 0, tension: 0 });
+      ds.push({ label: "_ci", data: lo, borderWidth: 0, pointRadius: 0, fill: false, tension: 0 });
+      ds.push({ label: "_ci", data: hi, borderWidth: 0, pointRadius: 0, backgroundColor: c + "26", fill: "-1", tension: 0 });
+    });
+    if (charts["c-km"]) charts["c-km"].destroy();
+    const el = document.getElementById("c-km"); if (!el) return;
+    const grid = css("--grid"), ink = css("--text-secondary");
+    charts["c-km"] = new Chart(el, { type: "line", data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+      interaction: { mode: "nearest", intersect: false },
+      plugins: { endLabels: { enabled: false }, legend: { position: "top", align: "start", labels: { color: ink, boxWidth: 12, boxHeight: 12, filter: i => i.text !== "_ci" } },
+        tooltip: { filter: i => i.dataset.label !== "_ci", callbacks: { title: i => `${i[0].parsed.x.toFixed(1)} months`, label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}% in care` } } },
+      scales: { x: { type: "linear", min: 0, max: 24, title: { display: true, text: "Months since ART start", color: ink }, ticks: { stepSize: 3, color: ink }, grid: { color: grid } },
+        y: { min: Math.max(0, Math.floor(Math.min(100, ...ds.flatMap(d => d.label === "_ci" ? [] : d.data.map(p => p.y))) / 10) * 10 - 10), max: 100,
+          title: { display: true, text: "% still in care", color: ink }, ticks: { color: ink, callback: v => v + "%" }, grid: { color: grid } } } } });
+    const lr = keys.length > 1 ? logRank(keys.map(k => g[k])) : null;
+    $("#km-test").textContent = lr ? `Log-rank test: χ² = ${lr.chi.toFixed(2)}, df = ${lr.df}, p ${lr.p < 0.001 ? "< 0.001" : "= " + lr.p.toFixed(3)}` : "";
+    const f = x => `${(x.S * 100).toFixed(1)}% (${(x.lo * 100).toFixed(1)}–${(x.hi * 100).toFixed(1)})`;
+    const types = ["LTFU", "Stopped ART", "Died", "Transferred out"];
+    $("#km-table").innerHTML = table(["Group", "Records", "Exits", ...types, "In care at 6m (95% CI)", "In care at 12m (95% CI)", "In care at 24m (95% CI)"],
+      keys.map((k, i) => { const fit = fits[i], c = countBy(g[k], o => o.type), tmax = Math.max(...g[k].map(o => o.t));
+        return [esc(k), fit.n, fit.events, ...types.map(t => c[t] || 0), f(fit.at(6)), tmax >= 10 ? f(fit.at(12)) : "–", tmax >= 22 ? f(fit.at(24)) : "–"]; }),
+      [1, 2, 3, 4, 5, 6]) + (noDate ? `<p class="note">${noDate} record(s) left out: no valid ART start date.</p>` : "");
+  }
   function renderPatients(D) {
     const P = D.pl, I = ind(P), p = k => pct(...I[k]);
     const hfModel = Object.fromEntries(RAW.hf.map(r => [r._site, r.b15]));
@@ -1668,6 +1814,7 @@ window.DPR_EMR_MAP = {
             const name = k === "~" ? "Not yet assessed" : v ? label("hf", v, k) : k === "eligible" ? "Yes" : k === "not_eligible" ? "No" : k;
             return [i ? "" : `<b>${title}</b>`, esc(name), new Set(rows.map(r => r._site)).size, rows.length, fmtPct(...x.ret_6m), fmtPct(...x.ret_12m), fmtPct(...x.vls_12m), fmtPct(...x.cd4), fmtPct(...x.tpt)]; }); }),
         [2, 3, 4, 5, 6, 7, 8])}</div>
+      ${kmSection()}
       <h2>Indicators by county</h2>
       <div class="card">${table(["County", "Records", "Active 6m", "Active 12m", "Active 24m", "VL suppressed 12m", "Baseline CD4 done", "TPT started (eligible)"],
         cs.concat(["All"]).map(c => { const rows = c === "All" ? P : P.filter(r => SITE[r._site]?.county === c), x = ind(rows);
@@ -1678,6 +1825,8 @@ window.DPR_EMR_MAP = {
     const ac = [["cd4", "CD4 done"], ["ahd", "AHD at baseline"], ["lam", "TB-LAM (AHD)"], ["xpert", "Xpert (AHD)"], ["crag", "CrAg (AHD)"]];
     chart("c-ahdc", "bar", ac.map(a => a[1]), [{ label: "Records", data: ac.map(([k]) => pct(...I[k])), nd: ac.map(([k]) => I[k].join("/")) }], { horizontal: true, pct: true, labels: true });
     const mg = groups.map(([k]) => ind(P.filter(r => model(r) === k)).ret_12m);
+    renderKM(P);
+    $("#km-by").addEventListener("change", e => { KM_BY = e.target.value; renderKM(P); });
     chart("c-model12", "bar", groups.map(g => g[1]), [{ label: "Active at 12 months", data: mg.map(x => pct(...x)), nd: mg.map(x => x.join("/")) }], { horizontal: true, pct: true, labels: true });
   }
 
@@ -1724,6 +1873,19 @@ window.DPR_EMR_MAP = {
 
   // ---------------------------------------------------------------- shell
   function banner(msg, err) { const b = $("#banner"); b.hidden = !msg; b.className = "banner" + (err ? " error" : ""); b.innerHTML = msg || ""; }
+  /** Where the data come from: ODK Central (via the hourly sync) and the EMR files in the Drive folder. */
+  function renderSources() {
+    const emr = RAW.pl.filter(r => (r.data_source || r._source) === "EMR").length, odkPl = RAW.pl.length - emr;
+    const host = String(CFG.centralUrl || "centralodknascop.nascop.org").replace(/^https?:\/\//, "");
+    let sync = "";
+    if (SYNC) { const bad = /ERROR/i.test(SYNC.msg);
+      sync = ` · <span class="${bad ? "src-bad" : ""}" title="${esc(SYNC.msg)}">last sync from ODK Central: ${esc(SYNC.when)}${bad ? " – with errors (hover for details)" : ""}</span>`; }
+    else if (!DEMO) sync = ` · <span class="src-bad">last sync time not available (run DPR sync → 3. Sync now in the Google Sheet)</span>`;
+    $("#sources").innerHTML = DEMO ? "" : `<b>Data:</b> ODK Central (${esc(host)}) – HF ${RAW.hf.length} · Patient-Level ${odkPl} · KII ${RAW.kii.length}` +
+      ` &nbsp;|&nbsp; EMR files (Drive folder) – Patient-Level ${emr}${sync}`;
+    if (!DEMO && !RAW.hf.length && !odkPl && !RAW.kii.length)
+      banner("No ODK Central submissions are in the Google Sheet yet. In the sheet, run <b>DPR sync → 2. Test login</b>, then <b>3. Sync now</b>, and check the <b>_sync_log</b> tab.", true);
+  }
   function render() {
     const D = filtered();
     renderProfile(D);
@@ -1736,6 +1898,7 @@ window.DPR_EMR_MAP = {
     $("#mode-badge").textContent = DEMO ? "DEMO DATA" : "Live data"; $("#mode-badge").className = "badge" + (DEMO ? " demo" : "");
     if (DEMO) banner("Demo mode: the numbers below are made up. Put your Google Sheet ID in <code>config.js</code> to show the real assessment data.");
     $("#updated").textContent = `Updated ${new Date().toLocaleString()}`; $("#reload").disabled = false;
+    renderSources();
     render();
   }
   function init() {
@@ -1752,7 +1915,7 @@ window.DPR_EMR_MAP = {
     cascade();
     $("#f-county").addEventListener("change", () => { $("#f-sub").value = ""; $("#f-fac").value = ""; cascade(); render(); });
     $("#f-sub").addEventListener("change", () => { $("#f-fac").value = ""; cascade(); render(); });
-    ["#f-fac", "#f-level", "#f-own", "#f-model"].forEach(s => $(s).addEventListener("change", render));
+    ["#f-fac", "#f-level", "#f-own", "#f-model", "#f-src"].forEach(s => $(s).addEventListener("change", render));
     $("#f-pilot").addEventListener("change", () => { cascade(); render(); });
     $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); $("#f-pilot").value = "exclude"; cascade(); render(); });
     $("#reload").addEventListener("click", refresh);
