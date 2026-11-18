@@ -1333,6 +1333,31 @@ window.DPR_EMR_MAP = {
     if (errs.length) banner(`Some data could not be loaded – ${errs.join("; ")}. Check the tab names in config.js and that the sheet is shared "Anyone with the link – Viewer".`, true);
   }
 
+  // ---------------------------------------------------------------- HF facility data → patient records (MFL code)
+  /** Facility fields from the HF assessment carried on every patient record (hf_… columns written by the sync
+   *  script). If the sheet does not have them yet, the same link is made here from the HF tab, on the MFL code. */
+  const HF_LINK = { hf_assess_date: "assess_date", hf_facility_name: "facility_name", hf_ownership: "ownership", hf_keph_level: "keph_level",
+    hf_ext_support: "a9", hf_transition_changes: "a10", hf_clients_on_art: "a12", hf_integration_date: "b6",
+    hf_eligibility: "eligibility", hf_integration_model: "b15", hf_linkage_model: "b21", hf_funding: "b28" };
+  const mflKey = v => String(v || "").replace(/\D/g, "").replace(/^0+/, "");
+  function linkHfToPatients() {
+    const latest = (rows, key) => { const m = {}; rows.slice().sort((a, b) => String(a._date).localeCompare(String(b._date)))
+      .forEach(r => { const k = key(r); if (k) m[k] = r; }); return m; };
+    const hfByMfl = latest(RAW.hf, r => mflKey(r.mfl_code)), hfBySite = latest(RAW.hf, r => r._site);
+    const siteByMfl = {};
+    SITES.forEach(s => { if (mflKey(s.mfl)) siteByMfl[mflKey(s.mfl)] = s.id; });
+    RAW.hf.forEach(r => { if (mflKey(r.mfl_code) && SITE[r._site]) siteByMfl[mflKey(r.mfl_code)] = r._site; });
+    RAW.pl.forEach(r => {
+      const m = mflKey(r.mfl_code);
+      if (!SITE[r._site] && siteByMfl[m]) r._site = siteByMfl[m];               // EMR row with only an MFL code
+      if (r.hf_matched_on && r.hf_matched_on !== "no HF assessment yet") { r._hf = r.hf_matched_on; return; }  // linked by the sync script
+      const h = (m && hfByMfl[m]) || hfBySite[r._site];
+      if (!h) { r._hf = ""; return; }
+      r._hf = m && hfByMfl[m] ? "MFL code" : "site ID";
+      Object.entries(HF_LINK).forEach(([k, v]) => { if (!r[k]) r[k] = h[v] ?? ""; });
+    });
+  }
+
   // ---------------------------------------------------------------- demo data
   function demoData() {
     let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -1345,7 +1370,9 @@ window.DPR_EMR_MAP = {
       const model = pick(["full", "full", "partial", "partial", "standalone"]);
       const b6 = pick(["2025-02-01", "2025-03-01", "2024-11-01", "2025-05-01"]);
       const elig = (b6 >= "2024-07-01" && b6 <= "2025-03-31") ? "eligible" : "not_eligible";
-      hf.push({ _site: s.id, _date: d, site_id: s.id, county: s.county, b15: model, b15_suggested: model, b6, eligibility: elig,
+      const mflD = s.mfl || String(90000 + i);
+      hf.push({ _site: s.id, _date: d, site_id: s.id, mfl_code: mflD, county: s.county, keph_level: s.keph || pick(["level3", "level4"]),
+        ownership: s.ownership || pick(["public", "public", "fbo_ngo"]), a9: pick(["technical", "both", "financial", "none"]), b15: model, b15_suggested: model, b6, eligibility: elig,
         b3: model === "standalone" ? "no_all" : "yes_closed", b5_general_art_n: model === "standalone" ? "0" : "2",
         a12: String(300 + Math.floor(rnd() * 2000)), a13: String(8 + Math.floor(rnd() * 40)), a14: String(8 + Math.floor(rnd() * 40)),
         b17: pick(["fully_shared", "partly_shared", "separate"]),
@@ -1367,7 +1394,7 @@ window.DPR_EMR_MAP = {
         const cd4 = rnd() < 0.7 ? "1" : "2", cd4r = cd4 === "1" ? pick(["1", "2", "2", "2"]) : "";
         const ahd = cd4r === "1" || age < 5;
         const vl = s => s === "1" ? (rnd() < 0.8 ? "1" : "2") : "";
-        const r = { _site: s.id, _date: d, site_id: s.id, cohort, age: String(age), sex: pick(["1", "2"]), pop_type: pick(["1", "1", "1", "2"]),
+        const r = { _site: s.id, _date: d, site_id: s.id, mfl_code: mflD, cohort, age: String(age), sex: pick(["1", "2"]), pop_type: pick(["1", "1", "1", "2"]),
           care_status_6m: s6, care_status_12m: s12, care_status_24m: s24, cd4_test_baseline: cd4, cd4_result: cd4r,
           tb_lam_test: ahd ? pick(["1", "1", "2"]) : "", xpert_mtb_test: ahd ? pick(["1", "2"]) : "", crag_test: ahd ? pick(["1", "1", "2"]) : "",
           tpt_eligible: pick(["1", "1", "2"]), dsd_model_6m: s6 === "1" ? pick(["1", "2", "3", "5", "8"]) : "" };
@@ -1393,7 +1420,8 @@ window.DPR_EMR_MAP = {
       : /chronic/.test(m) ? "Chronic care model" : /partial|hrh/.test(m) ? "Partial – HRH only" : "Not on site list"; };
   /** Facility profile: site list, overridden by what was recorded in the HF assessment. */
   function profileOf(s) {
-    const hf = RAW.hf.find(r => r._site === s.id) || {};
+    const hf = RAW.hf.filter(r => r._site === s.id || (mflKey(s.mfl) && mflKey(r.mfl_code) === mflKey(s.mfl)))
+      .sort((a, b) => String(b._date).localeCompare(String(a._date)))[0] || {};
     return { ...s,
       keph: hf.keph_level || s.keph, keph_src: hf.keph_level ? "HF assessment" : s.keph ? `site list (${s.keph_source})` : "",
       ownership: hf.ownership || s.ownership, own_src: hf.ownership ? "HF assessment" : s.ownership ? "site list" : "",
@@ -1420,8 +1448,15 @@ window.DPR_EMR_MAP = {
   function filtered() {
     const coh = F("#f-cohort"), ok = new Set(SITES.filter(siteMatch).map(s => s.id));
     const keep = r => SITE[r._site] ? ok.has(r._site) : !anySiteFilter();
+    // patient records: facility level, ownership and model come from the HF assessment linked on the MFL code
+    const plDemo = r => { const p = SITE[r._site] ? profileOf(SITE[r._site]) : {};
+      return (!F("#f-level") || (r.hf_keph_level || p.keph) === F("#f-level"))
+        && (!F("#f-own") || (r.hf_ownership || p.ownership || "unknown") === F("#f-own")); };
+    const okLoc = new Set(SITES.filter(s => pilotOK(s) && (!F("#f-county") || s.county === F("#f-county")) && (!F("#f-sub") || s.sub_county === F("#f-sub"))
+      && (!F("#f-fac") || s.id === F("#f-fac")) && (!F("#f-model") || profileOf(s).group === F("#f-model"))).map(s => s.id));
+    const keepPl = r => (SITE[r._site] ? okLoc.has(r._site) : !anySiteFilter()) && plDemo(r);
     return { hf: RAW.hf.filter(keep), kii: RAW.kii.filter(keep),
-      pl: RAW.pl.filter(r => keep(r) && (!coh || r.cohort === coh)) };
+      pl: RAW.pl.filter(r => keepPl(r) && (!coh || r.cohort === coh)) };
   }
   const sitesInScope = () => SITES.filter(siteMatch);
 
@@ -1604,12 +1639,14 @@ window.DPR_EMR_MAP = {
   }
   function renderPatients(D) {
     const P = D.pl, I = ind(P), p = k => pct(...I[k]);
-    const model = Object.fromEntries(RAW.hf.map(r => [r._site, r.b15]));
+    const hfModel = Object.fromEntries(RAW.hf.map(r => [r._site, r.b15]));
+    const model = r => r.hf_integration_model || hfModel[r._site];
+    const linked = P.filter(r => r._hf).length;
     const groups = [["full", "Fully integrated"], ["partial", "Partially integrated"], ["standalone", "Stand-alone"]];
     const cs = CFG.counties.filter(c => P.some(r => SITE[r._site]?.county === c));
     $("#tab-patients").innerHTML = `
       <div class="kpis">
-        ${kpi(P.length.toLocaleString(), "Patient records", `${P.filter(r => r.cohort === "1").length} in 12-month · ${P.filter(r => r.cohort === "2").length} in 24-month cohort${(() => { const e = P.filter(r => (r.data_source || r._source) === "EMR").length; return e ? ` · ODK: ${P.length - e} · EMR: ${e}` : ""; })()}`)}
+        ${kpi(P.length.toLocaleString(), "Patient records", `${P.filter(r => r.cohort === "1").length} in 12-month · ${P.filter(r => r.cohort === "2").length} in 24-month cohort${(() => { const e = P.filter(r => (r.data_source || r._source) === "EMR").length; return e ? ` · ODK: ${P.length - e} · EMR: ${e}` : ""; })()} · linked to HF (MFL): ${linked}`)}
         ${kpi(p("ret_12m") != null ? p("ret_12m") + "%" : "–", "Active on ART at 12 months", fmtPct(...I.ret_12m))}
         ${kpi(p("vls_12m") != null ? p("vls_12m") + "%" : "–", "VL suppressed (<200) at 12 months", fmtPct(...I.vls_12m))}
         ${kpi(p("cd4") != null ? p("cd4") + "%" : "–", "Baseline CD4 done", fmtPct(...I.cd4))}
@@ -1619,8 +1656,18 @@ window.DPR_EMR_MAP = {
         ${card("Active on ART, by follow-up point and cohort", "c-ret", "Denominator: records with a documented care status at that point.")}
         ${card("Viral load cascade", "c-vl", "Coverage = VL done among active; suppression = &lt;200 copies/mL among results.")}
         ${card("Baseline AHD cascade", "c-ahdc", "AHD = CD4 &lt;200 or age &lt;5 at ART start. TB-LAM, Xpert, CrAg among AHD.")}
-        ${card("Active on ART at 12 months, by facility integration model", "c-model12", "Model from the HF assessment (B15) of the same site.")}
+        ${card("Active on ART at 12 months, by facility integration model", "c-model12", "Model from the HF assessment (B15), linked to each record on the MFL code.")}
       </div>
+      <h2>Indicators by facility characteristics (HF assessment, linked on MFL code)</h2>
+      <p class="note">${linked.toLocaleString()} of ${P.length.toLocaleString()} records are linked to an HF assessment${P.length - linked ? ` – ${(P.length - linked).toLocaleString()} are from facilities not yet assessed and are shown as "Not yet assessed"` : ""}.</p>
+      <div class="card">${table(["Facility characteristic", "Group", "Facilities", "Records", "Active 6m", "Active 12m", "VL suppressed 12m", "Baseline CD4 done", "TPT started (eligible)"],
+        [["Facility level (KEPH)", "hf_keph_level", "keph_level"], ["Ownership", "hf_ownership", "ownership"], ["Integration model (B15)", "hf_integration_model", "b15"],
+         ["External support for HIV (A9)", "hf_ext_support", "a9"], ["Integration date in study window", "hf_eligibility", null]].flatMap(([title, col, v]) => {
+          const g = countBy(P, r => r[col] || "~"), keys = Object.keys(g).sort((a, b) => (a === "~") - (b === "~") || g[b] - g[a]);
+          return keys.map((k, i) => { const rows = P.filter(r => (r[col] || "~") === k), x = ind(rows);
+            const name = k === "~" ? "Not yet assessed" : v ? label("hf", v, k) : k === "eligible" ? "Yes" : k === "not_eligible" ? "No" : k;
+            return [i ? "" : `<b>${title}</b>`, esc(name), new Set(rows.map(r => r._site)).size, rows.length, fmtPct(...x.ret_6m), fmtPct(...x.ret_12m), fmtPct(...x.vls_12m), fmtPct(...x.cd4), fmtPct(...x.tpt)]; }); }),
+        [2, 3, 4, 5, 6, 7, 8])}</div>
       <h2>Indicators by county</h2>
       <div class="card">${table(["County", "Records", "Active 6m", "Active 12m", "Active 24m", "VL suppressed 12m", "Baseline CD4 done", "TPT started (eligible)"],
         cs.concat(["All"]).map(c => { const rows = c === "All" ? P : P.filter(r => SITE[r._site]?.county === c), x = ind(rows);
@@ -1630,7 +1677,7 @@ window.DPR_EMR_MAP = {
     chart("c-vl", "bar", T3.map(t => t[1]), [["vlcov", "VL coverage"], ["vls", "VL suppression"]].map(([k, l]) => ({ label: l, data: T3.map(([t]) => pct(...I[`${k}_${t}`])), nd: T3.map(([t]) => I[`${k}_${t}`].join("/")) })), { pct: true, labels: true });
     const ac = [["cd4", "CD4 done"], ["ahd", "AHD at baseline"], ["lam", "TB-LAM (AHD)"], ["xpert", "Xpert (AHD)"], ["crag", "CrAg (AHD)"]];
     chart("c-ahdc", "bar", ac.map(a => a[1]), [{ label: "Records", data: ac.map(([k]) => pct(...I[k])), nd: ac.map(([k]) => I[k].join("/")) }], { horizontal: true, pct: true, labels: true });
-    const mg = groups.map(([k]) => ind(P.filter(r => model[r._site] === k)).ret_12m);
+    const mg = groups.map(([k]) => ind(P.filter(r => model(r) === k)).ret_12m);
     chart("c-model12", "bar", groups.map(g => g[1]), [{ label: "Active at 12 months", data: mg.map(x => pct(...x)), nd: mg.map(x => x.join("/")) }], { horizontal: true, pct: true, labels: true });
   }
 
@@ -1685,6 +1732,7 @@ window.DPR_EMR_MAP = {
   async function refresh() {
     $("#reload").disabled = true; $("#updated").textContent = "Loading…";
     await loadAll();
+    linkHfToPatients();
     $("#mode-badge").textContent = DEMO ? "DEMO DATA" : "Live data"; $("#mode-badge").className = "badge" + (DEMO ? " demo" : "");
     if (DEMO) banner("Demo mode: the numbers below are made up. Put your Google Sheet ID in <code>config.js</code> to show the real assessment data.");
     $("#updated").textContent = `Updated ${new Date().toLocaleString()}`; $("#reload").disabled = false;
