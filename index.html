@@ -1997,7 +1997,7 @@ window.DPR_EMR_MAP = {
       const have = Object.values(o.dim).filter(Boolean); o.score = have.length ? Math.round(10 * have.reduce((a, s) => a + 100 * s[0] / s[1], 0) / have.length) / 10 : null; });
     return out;
   }
-  /** Data quality tab (Patient-Level): every question checked for null (blank) and "Not documented"; only those below 100% shown. */
+  /** Data quality tab (Patient-Level) */
   function renderDQ(D) {
     const o = dqRun(D).pl, P = D.pl, Qm = CODES.pl.q || {}, C = o.qd.Completeness || {};
     const st3 = v => status(v >= 95 ? "good" : v >= 85 ? "warning" : "critical", v + "%");
