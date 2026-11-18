@@ -1991,83 +1991,24 @@ window.DPR_EMR_MAP = {
       const have = Object.values(o.dim).filter(Boolean); o.score = have.length ? Math.round(10 * have.reduce((a, s) => a + 100 * s[0] / s[1], 0) / have.length) / 10 : null; });
     return out;
   }
-  let DQ_TOOL = "pl", DQ_DIM = "", DQ_Q = "", DQ_OUT = null;
-  const dqCls = v => v == null ? "" : v >= 95 ? "good" : v >= 85 ? "warning" : "critical";
+  /** Data quality tab: Patient-Level only – the questions with the most issues. */
   function renderDQ(D) {
-    DQ_OUT = dqRun(D);
-    const O = DQ_OUT, t = DQ_TOOL, o = O[t], TN = Object.fromEntries(TOOLS), dims = DQ_DIMS.map(d => d[0]).filter(d => TOOLS.some(([k]) => O[k].dim[d]));
-    const sc = s => s ? status(dqCls(pct(...s)), pct(...s) + "%") : "–";
-    // most affected questions
-    // questions only (coverage, timeliness and duplicates are in the checks table)
-    const Q = Object.entries(o.q).filter(([v, x]) => x.bad && !(v in PSEUDO)).map(([v, x]) => ({ v, n: x.n, bad: x.bad, dims: x.dims, p: pct(x.bad, x.n) })).sort((a, b) => b.bad - a.bad || b.p - a.p);
-    const top = Q.slice(0, 15);
+    const o = dqRun(D).pl, t = "pl";
+    // questions only (coverage, timeliness and duplicates are not questions)
+    const Q = Object.entries(o.q).filter(([v, x]) => x.bad && !(v in PSEUDO))
+      .map(([v, x]) => ({ v, n: x.n, bad: x.bad, dims: x.dims, p: pct(x.bad, x.n) })).sort((a, b) => b.bad - a.bad || b.p - a.p);
     $("#tab-dq").innerHTML = `
-      <h2 style="margin-top:4px">Data quality by tool</h2>
-      <div class="card">${table(["Tool", "Records", "Overall", ...dims], TOOLS.map(([k, n]) => [
-        `<button type="button" class="linkbtn${k === t ? " on" : ""}" data-dqtool="${k}">${n}</button>`, D[k].length.toLocaleString(),
-        O[k].score != null ? status(dqCls(O[k].score), `<b>${O[k].score}%</b>`) : "–", ...dims.map(d => sc(O[k].dim[d]))]), [1, 2, 3, 4, 5, 6, 7, 8, 9])}
-        <p class="note">Score = % of answers checked (question × record) that pass. Overall = average of the dimensions with data. Green ≥ 95%, amber 85–94%, red &lt; 85%. Click a tool to see its details below.</p></div>
-      <div class="segbar" role="tablist">${TOOLS.map(([k, n]) => `<button type="button" role="tab" aria-selected="${k === t}" data-dqtool="${k}">${n}</button>`).join("")}</div>
-      <div class="kpis">
-        ${kpi(o.score != null ? o.score + "%" : "–", `${TN[t]} – overall score`, `${D[t].length.toLocaleString()} records · ${o.issues.length.toLocaleString()} issues`)}
-        ${DQ_DIMS.filter(([d]) => o.dim[d]).map(([d]) => { const s = o.dim[d]; return kpi(pct(...s) + "%", d, `${(s[1] - s[0]).toLocaleString()} issues in ${s[1].toLocaleString()} answers checked`); }).join("")}
-      </div>
-      <div class="grid2" style="margin-top:16px">
-        ${card(`Most affected questions – ${TN[t]}`, "c-dq-q", "Number of issues per question (top 15). Colour = dimension.", true)}
-        ${card(`Score by dimension – ${TN[t]}`, "c-dq-dim", "% of checks passed.")}
-      </div>
-      <h2>Most affected questions – ${TN[t]}</h2>
+      <h2 style="margin-top:4px">Most affected questions – Patient-Level</h2>
       <div class="card">${Q.length ? table(["#", "Question", "Variable", "Records with issue", "Records checked", "% affected", "Main problem"],
         Q.slice(0, 40).map((x, i) => [i + 1, `${i < 5 ? "<b>" : ""}${esc(qLabel(t, x.v))}${i < 5 ? "</b>" : ""}`, `<code>${esc(x.v)}</code>`, x.bad.toLocaleString(), x.n.toLocaleString(),
           status(x.p >= 15 ? "critical" : x.p >= 5 ? "warning" : "good", x.p + "%"),
-          Object.entries(x.dims).sort((a, b) => b[1] - a[1]).map(([d, n]) => `${d} ${n}`).join(" · ") + ` <button type="button" class="linkbtn" data-dqq="${esc(x.v)}">see issues</button>`]), [0, 3, 4, 5])
+          Object.entries(x.dims).sort((a, b) => b[1] - a[1]).map(([d, n]) => `${d} ${n}`).join(" · ")]), [0, 3, 4, 5])
         + (Q.length > 40 ? `<p class="note">Showing the 40 most affected of ${Q.length} questions with issues.</p>` : "")
         : `<div class="empty">No question has an issue for this selection.</div>`}
-        <p class="note">Ranked by number of records with an issue. % affected = records with an issue ÷ records where the question was checked. Main problem = number of issues by dimension. The five most affected are in bold.</p></div>
-      <h2>Checks – ${TN[t]}</h2>
-      <div class="card">${table(["Dimension", "Check", "Records checked", "Records with issue", "Answers checked", "Answers with issue", "Answers passed"],
-        o.checks.filter(x => x.n).sort((a, b) => dims.indexOf(a.dim) - dims.indexOf(b.dim) || b.bad / b.n - a.bad / a.n)
-          .map(x => { const cn = x.cn ?? x.n, cb = x.cb ?? x.bad; return [`<b>${x.dim}</b>`, esc(x.name), x.n.toLocaleString(), x.bad.toLocaleString(), cn.toLocaleString(), cb.toLocaleString(), status(dqCls(pct(cn - cb, cn)), pct(cn - cb, cn) + "%")]; }), [2, 3, 4, 5, 6])}
-        <p class="note">${DQ_DIMS.map(([d, s]) => `<b>${d}</b>: ${s}.`).join(" ")}</p></div>
-      ${t === "pl" && o.acc.length ? `<h2>Accuracy – ODK abstraction vs EMR extract (same facility)</h2>
-      <div class="card">${table(["Facility", "Indicator", "ODK", "EMR", "Difference (pp)"], o.acc.flatMap(a => a.rows.map(([, l, x, e], i) => {
-        const d = x[1] && e[1] ? Math.round(10 * (pct(...x) - pct(...e))) / 10 : null;
-        return [i ? "" : `${a.s} – ${esc(SITE[a.s]?.name || "")}`, l, fmtPct(...x), fmtPct(...e), d == null ? "–" : status(Math.abs(d) <= 10 ? "good" : "critical", (d > 0 ? "+" : "") + d)]; })), [2, 3, 4])}</div>` : ""}
-      <h2>Data quality by facility – ${TN[t]}</h2>
-      <div class="card">${(() => { const dd = DQ_DIMS.map(d => d[0]).filter(d => o.dim[d]);
-        return table(["Facility", ...dd, "Overall", "Issues"], Object.keys(o.site).filter(s => SITE[s]).sort().map(s => { const v = dd.map(d => o.site[s][d]).filter(Boolean).map(x => 100 * x[0] / x[1]);
-          const ov = v.length ? Math.round(10 * v.reduce((a, b) => a + b, 0) / v.length) / 10 : null;
-          return [`${s} – ${esc(SITE[s].name)}`, ...dd.map(d => sc(o.site[s][d])), ov == null ? "–" : status(dqCls(ov), ov + "%"), o.issues.filter(x => x.site === s).length]; }), dd.map((_, i) => i + 1).concat([dd.length + 1, dd.length + 2])); })()}</div>
-      <h2>Issues to follow up – ${TN[t]}</h2>
-      <div class="card">
-        <div class="kmbar"><span>
-          <label>Dimension <select id="dq-dim"><option value="">All dimensions</option>${DQ_DIMS.filter(([d]) => o.dim[d]).map(([d]) => `<option${d === DQ_DIM ? " selected" : ""}>${d}</option>`).join("")}</select></label>
-          <label style="margin-left:12px">Question <select id="dq-q"><option value="">All questions</option>${Q.map(x => `<option value="${esc(x.v)}"${x.v === DQ_Q ? " selected" : ""}>${esc(x.v)} – ${esc(qLabel(t, x.v).slice(0, 60))} (${x.bad})</option>`).join("")}</select></label></span>
-          <button id="dq-dl" type="button">Download issues (CSV)</button></div>
-        <div id="dq-list"></div>
-        <p class="note">Ref = first 8 characters of the ODK submission ID, or the row in the sheet tab for EMR records. No client identifiers are shown.</p></div>`;
-    // charts
-    const dimCol = Object.fromEntries(DQ_DIMS.map(([d], i) => [d, SER()[i % 8]]));
-    const used = DQ_DIMS.map(d => d[0]).filter(d => top.some(x => x.dims[d]));
-    chart("c-dq-q", "bar", top.map(x => `${x.v} – ${qLabel(t, x.v).replace(/^[A-Z]?\d+[a-z]?\.\s*/, "").slice(0, 40)}`),
-      used.map(d => ({ label: d, data: top.map(x => x.dims[d] || 0), color: dimCol[d] })), { horizontal: true, stacked: true, autoHeight: true });
-    const ds = DQ_DIMS.filter(([d]) => o.dim[d]);
-    chart("c-dq-dim", "bar", ds.map(d => d[0]), [{ label: "% passed", data: ds.map(([d]) => pct(...o.dim[d])), nd: ds.map(([d]) => o.dim[d].join("/")) }], { horizontal: true, pct: true, labels: true });
-    const list = () => { const L = o.issues.filter(x => (!DQ_DIM || x.dim === DQ_DIM) && (!DQ_Q || x.q === DQ_Q));
-      $("#dq-list").innerHTML = table(["Question", "Dimension", "Facility", "Source", "Ref", "Check", "Detail"],
-        L.slice(0, 300).map(x => [`<code>${esc(x.q)}</code> ${esc(qLabel(t, x.q).slice(0, 70))}`, x.dim, x.site ? `${x.site}${SITE[x.site] ? " – " + esc(SITE[x.site].name) : ""}` : "", x.src, `<code>${esc(x.ref)}</code>`, esc(x.check), esc(x.detail)]))
-        + (L.length > 300 ? `<p class="note">Showing 300 of ${L.length.toLocaleString()} issues – download the CSV for all.</p>` : ""); };
-    list();
-    document.querySelectorAll("[data-dqtool]").forEach(b => b.addEventListener("click", () => { DQ_TOOL = b.dataset.dqtool; DQ_DIM = ""; DQ_Q = ""; renderDQ(D); }));
-    document.querySelectorAll("[data-dqq]").forEach(b => b.addEventListener("click", () => { DQ_Q = b.dataset.dqq; DQ_DIM = ""; $("#dq-q").value = DQ_Q; $("#dq-dim").value = ""; list(); $("#dq-list").scrollIntoView({ behavior: "smooth", block: "start" }); }));
-    $("#dq-dim").addEventListener("change", e => { DQ_DIM = e.target.value; list(); });
-    $("#dq-q").addEventListener("change", e => { DQ_Q = e.target.value; list(); });
-    $("#dq-dl").addEventListener("click", () => {
-      const L = o.issues.filter(x => (!DQ_DIM || x.dim === DQ_DIM) && (!DQ_Q || x.q === DQ_Q));
-      const csv = Papa.unparse([["Tool", "Question variable", "Question", "Dimension", "Facility", "Facility name", "Source", "Ref", "Check", "Detail"],
-        ...L.map(x => [TN[t], x.q, qLabel(t, x.q), x.dim, x.site || "", SITE[x.site]?.name || "", x.src, x.ref, x.check, x.detail])]);
-      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv" }));
-      a.download = `DPR2026_DQ_${TN[t].replace(/\W+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove(); });
+        <p class="note">${D.pl.length.toLocaleString()} patient records (ODK + EMR, as filtered above). Ranked by number of records with an issue.
+          % affected = records with an issue ÷ records where the question was checked (red ≥ 15%, amber ≥ 5%). The five most affected are in bold.
+          Main problem = number of issues by type: <b>Completeness</b> (required answer blank or "Not documented"), <b>Validity</b> (not a valid code, date or number),
+          <b>Consistency</b> (disagrees with another answer, e.g. dates out of order or skip logic not followed), <b>Accuracy</b> (ODK and EMR differ for the same facility).</p></div>`;
   }
 
   // ---------------------------------------------------------------- tab: KII
