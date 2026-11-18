@@ -1859,12 +1859,13 @@ window.DPR_EMR_MAP = {
   ];
   const TOOLS = [["pl", "Patient-Level"], ["hf", "Health Facility"], ["kii", "KII"]];
   const PSEUDO = { _record: "Whole record / submission", _facility: "Facility (number of records)", SubmissionDate: "Submission to ODK Central" };
+  const EXTRA_LABEL = { site_id: "Facility (site ID)", mfl_code: "MFL code" };
   const NOT_CHECKED = new Set(["roc_id", "dob", "data_collector_id", "username", "phonenumber", "devicephonenum"]);
   const isOdk = r => (r.data_source || r._source || "ODK") !== "EMR";
   const dayMs = 864e5;
   const dOf = v => { const x = isoDate(v); const t = Date.parse(x); return /^\d{4}-\d{2}-\d{2}$/.test(x) && !isNaN(t) ? t : null; };
   const blank = v => v == null || String(v).trim() === "";
-  const qLabel = (tool, v) => PSEUDO[v] || CODES[tool]?.q?.[v]?.l || v;
+  const qLabel = (tool, v) => PSEUDO[v] || CODES[tool]?.q?.[v]?.l || EXTRA_LABEL[v] || v;
   const qVars = (tool, pred) => Object.entries(CODES[tool]?.q || {}).filter(([v, m]) => !NOT_CHECKED.has(v) && pred(v, m)).map(([v]) => v);
   const consented = r => !["no", "2"].includes(String(r.consent || "").toLowerCase());
   function dqChecks() {
@@ -1937,7 +1938,10 @@ window.DPR_EMR_MAP = {
   /** Runs every check on the records in scope; returns per-tool results, question tallies and the issue list. */
   function dqRun(D) {
     ["hf", "pl", "kii"].forEach(f => D[f].forEach((r, i) => r._row = r._row || i + 2));
-    const out = {}; TOOLS.forEach(([t]) => out[t] = { checks: [], q: {}, site: {}, issues: [] });
+    const out = {}; TOOLS.forEach(([t]) => out[t] = { checks: [], q: {}, qd: {}, site: {}, issues: [] });
+    const tqd = (t, d, v, ok, r, det, how) => { const m = out[t].qd[d] = out[t].qd[d] || {};
+      const x = m[v] = m[v] || { N: new Set(), B: new Set(), ex: [], how: new Set() }; x.N.add(r); if (how) x.how.add(how);
+      if (!ok) { x.B.add(r); if (det && x.ex.length < 3 && !x.ex.includes(det)) x.ex.push(det); } };
     // per question: distinct records checked / with an issue (a record counts once even if several checks cover the question)
     const tq = (t, v, ok, key) => { const x = out[t].q[v] = out[t].q[v] || { N: new Set(), B: new Set(), dims: {}, get n() { return this.N.size; }, get bad() { return this.B.size; } };
       x.N.add(key); if (!ok) x.B.add(key); return x; };
@@ -1945,14 +1949,16 @@ window.DPR_EMR_MAP = {
     const issue = (t, dim, check, v, r, detail, site) => { out[t].issues.push({ tool: t, dim, check, q: v, site: site ?? r?._site, src: r ? (t === "pl" ? srcOf(r) : "ODK") : "", ref: r ? refOf(r) : "", detail });
       const x = out[t].q[v]; if (x) x.dims[dim] = (x.dims[dim] || 0) + 1; };
     dqChecks().forEach(c => {
-      let n = 0, bad = 0, cn = 0, cb = 0;
+      let n = 0, bad = 0, cn = 0, cb = 0; const ex = [];
       D[c.tool].forEach(r => { let any = false, fail = false;
         c.vars.forEach(v => { let ap; try { ap = c.applies(r, v); } catch (e) { ap = false; } if (!ap) return; any = true;
           let ok; try { ok = !!c.ok(r, v); } catch (e) { ok = false; }
           tq(c.tool, v, ok, r); ts(c.tool, r._site, c.dim, ok); cn++; if (!ok) cb++;
-          if (!ok) { fail = true; issue(c.tool, c.dim, c.name, v, r, (() => { try { return c.detail(r, v); } catch (e) { return ""; } })()); } });
+          const det = ok ? "" : (() => { try { return c.detail(r, v); } catch (e) { return ""; } })();
+          tqd(c.tool, c.dim, v, ok, r, det, c.name);
+          if (!ok) { fail = true; if (ex.length < 3) ex.push(`${v}: ${det}`); issue(c.tool, c.dim, c.name, v, r, det); } });
         if (any) { n++; if (fail) bad++; } });
-      out[c.tool].checks.push({ dim: c.dim, name: c.name, n, bad, cn, cb });
+      out[c.tool].checks.push({ dim: c.dim, name: c.name, vars: c.vars, n, bad, cn, cb, ex });
     });
     // Uniqueness
     const dup = (t, rows, key, name, why) => { const g = {}; rows.forEach(r => { const k = key(r); if (k) (g[k] = g[k] || []).push(r); });
@@ -1991,24 +1997,50 @@ window.DPR_EMR_MAP = {
       const have = Object.values(o.dim).filter(Boolean); o.score = have.length ? Math.round(10 * have.reduce((a, s) => a + 100 * s[0] / s[1], 0) / have.length) / 10 : null; });
     return out;
   }
-  /** Data quality tab: Patient-Level only – the questions with the most issues. */
+  /** Data quality tab (Patient-Level): completeness of every question, validity, consistency. */
   function renderDQ(D) {
-    const o = dqRun(D).pl, t = "pl";
-    // questions only (coverage, timeliness and duplicates are not questions)
-    const Q = Object.entries(o.q).filter(([v, x]) => x.bad && !(v in PSEUDO))
-      .map(([v, x]) => ({ v, n: x.n, bad: x.bad, dims: x.dims, p: pct(x.bad, x.n) })).sort((a, b) => b.bad - a.bad || b.p - a.p);
+    const o = dqRun(D).pl, t = "pl", P = D.pl, Qm = CODES.pl.q || {};
+    const st3 = (v, a = 95, b = 85) => v == null ? "–" : status(v >= a ? "good" : v >= b ? "warning" : "critical", v + "%");
+    const isND = (v, val) => { const d = CODES.pl.vars[v]; return d && /not documented/i.test(CODES.pl.lists[d.list]?.[val] || ""); };
+    const C = o.qd.Completeness || {}, V = o.qd.Validity || {};
+    // 1. completeness – every question, in form order
+    let k = 0;
+    const compRows = Object.entries(Qm).filter(([v]) => !NOT_CHECKED.has(v)).map(([v, m]) => {
+      const answered = P.filter(r => !blank(r[v])).length, nd = P.filter(r => isND(v, r[v])).length, c = C[v];
+      // expected = records where a completeness rule applies; blanks = rule says it should be filled but it is empty
+      const exp = c ? c.N.size : null, miss = c ? [...c.B].filter(r => blank(r[v])).length : null;
+      const p = exp ? Math.round(1000 * (exp - miss) / exp) / 10 : null;
+      return [++k, esc(m.l), `<code>${esc(v)}</code>`, m.a ? "Always" : "When applicable (skip logic)", exp == null ? "–" : exp.toLocaleString(),
+        answered.toLocaleString(), miss == null ? "–" : (miss ? `<b>${miss.toLocaleString()}</b>` : "0"), nd ? nd.toLocaleString() : "0",
+        exp ? st3(p) : `<span class="muted">${answered ? "answered when asked" : "not answered in any record"}</span>`];
+    });
+    // 2. validity – questions with a validity check
+    const vRows = Object.entries(V).map(([v, x]) => ({ v, n: x.N.size, b: x.B.size, ex: x.ex, how: [...x.how] }))
+      .sort((a, b) => b.b - a.b || (Object.keys(Qm).indexOf(a.v) - Object.keys(Qm).indexOf(b.v)));
+    const vType = h => h.map(x => /^MFL/.test(x) ? "MFL = 5 digits" : /^Age/.test(x) ? "Age 0–100" : /site list/.test(x) ? "On study site list"
+      : /ODK code/.test(x) ? "Valid ODK code" : /date/i.test(x) ? "Real date, not in future" : /whole number/.test(x) ? "Whole number ≥ 0" : x).join("; ");
+    // 3. consistency – one row per rule
+    const cRows = o.checks.filter(x => x.dim === "Consistency").sort((a, b) => b.bad - a.bad);
     $("#tab-dq").innerHTML = `
-      <h2 style="margin-top:4px">Most affected questions – Patient-Level</h2>
-      <div class="card">${Q.length ? table(["#", "Question", "Variable", "Records with issue", "Records checked", "% affected", "Main problem"],
-        Q.slice(0, 40).map((x, i) => [i + 1, `${i < 5 ? "<b>" : ""}${esc(qLabel(t, x.v))}${i < 5 ? "</b>" : ""}`, `<code>${esc(x.v)}</code>`, x.bad.toLocaleString(), x.n.toLocaleString(),
-          status(x.p >= 15 ? "critical" : x.p >= 5 ? "warning" : "good", x.p + "%"),
-          Object.entries(x.dims).sort((a, b) => b[1] - a[1]).map(([d, n]) => `${d} ${n}`).join(" · ")]), [0, 3, 4, 5])
-        + (Q.length > 40 ? `<p class="note">Showing the 40 most affected of ${Q.length} questions with issues.</p>` : "")
-        : `<div class="empty">No question has an issue for this selection.</div>`}
-        <p class="note">${D.pl.length.toLocaleString()} patient records (ODK + EMR, as filtered above). Ranked by number of records with an issue.
-          % affected = records with an issue ÷ records where the question was checked (red ≥ 15%, amber ≥ 5%). The five most affected are in bold.
-          Main problem = number of issues by type: <b>Completeness</b> (required answer blank or "Not documented"), <b>Validity</b> (not a valid code, date or number),
-          <b>Consistency</b> (disagrees with another answer, e.g. dates out of order or skip logic not followed), <b>Accuracy</b> (ODK and EMR differ for the same facility).</p></div>`;
+      <p class="note" style="margin-top:4px">${P.length.toLocaleString()} Patient-Level records (ODK + EMR, as filtered above). Red &lt; 85%, amber 85–94%, green ≥ 95%.</p>
+      <h2>1. Completeness – all questions</h2>
+      <div class="card">${table(["#", "Question", "Variable", "Asked", "Expected", "Answered", "Missing (blank)", "Not documented", "Completeness"], compRows, [0, 4, 5, 6, 7, 8])}
+        <p class="note"><b>Expected</b> = records where the question must be answered (always-asked questions, and follow-up items that are due, e.g. 12-month status when the
+          client was in care at 6 months, exit dates when the status needs one, VL result when VL was done). <b>Missing</b> = expected but blank.
+          <b>Not documented</b> = answered "Not documented" (information not in the records). Completeness = (expected − missing) ÷ expected.
+          Skip-logic questions without a rule show how many records answered them.</p></div>
+      <h2>2. Validity</h2>
+      <div class="card">${vRows.length ? table(["Question", "Variable", "Rule", "Answers checked", "Invalid", "Validity", "Examples of invalid answers"],
+        vRows.map(x => [esc(qLabel(t, x.v)), `<code>${esc(x.v)}</code>`, vType(x.how), x.n.toLocaleString(), x.b ? `<b>${x.b}</b>` : "0", st3(x.n ? Math.round(1000 * (x.n - x.b) / x.n) / 10 : null), esc(x.ex.join("; "))]), [3, 4, 5])
+        : `<div class="empty">No answers to check yet.</div>`}
+        <p class="note">Each filled-in answer is checked: coded answers must be one of the question's ODK codes, dates must be real dates and not in the future,
+          numbers whole and ≥ 0, age 0–100, MFL 5 digits, facility on the study site list. Questions with invalid answers are listed first.</p></div>
+      <h2>3. Consistency</h2>
+      <div class="card">${cRows.length ? table(["Rule", "Question(s)", "Records checked", "Inconsistent", "Consistency", "Examples"],
+        cRows.map(x => [esc(x.name), x.vars.slice(0, 3).map(v => `<code>${esc(v)}</code>`).join(" ") + (x.vars.length > 3 ? ` +${x.vars.length - 3}` : ""),
+          x.n.toLocaleString(), x.bad ? `<b>${x.bad}</b>` : "0", x.n ? st3(Math.round(1000 * (x.n - x.bad) / x.n) / 10) : "<span class=\"muted\">not applicable</span>", esc(x.ex.join("; "))]), [2, 3, 4])
+        : `<div class="empty">No rules to check.</div>`}
+        <p class="note">Each rule compares answers that must agree (dates in order, cohort window, skip logic, sex-specific items). Records checked = records the rule applies to.</p></div>`;
   }
 
   // ---------------------------------------------------------------- tab: KII
