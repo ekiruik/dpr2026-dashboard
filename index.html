@@ -258,7 +258,7 @@ window.DPR_CONFIG = {
     hf:  "HF",            // DPR 2026 – Health Facility Assessment
     pl:  "PatientLevel",  // Kenya 2026 DPR Patient-Level Questionnaire (DE-IDENTIFIED copy – see README)
     kii: "KII",           // DPR 2026 – Healthcare Worker KII
-    pl_emr: "PatientLevel_EMR" // EMR patient-level extract tab (set "" to switch off)
+    pl_emr: ""            // not used: EMR records are merged into the PatientLevel tab by the sync script
   },
 
   // Optional: instead of sheetId + tabs, give each tab's "Publish to web → CSV" link.
@@ -1303,7 +1303,7 @@ window.DPR_EMR_MAP = {
       o._site = o.site_id || o.facility || "";
       o._date = isoDate(o.assess_date || o.collection_date || o.today || o.start || "");
       return o;
-    }).filter(o => Object.values(o).some(v => v !== ""));
+    }).filter(o => Object.values(o).some(v => v !== "") && o._site !== "Site ID" && o._site !== "site_id");   // skip blank / repeated header rows
   }
   async function loadAll() {
     const live = CFG.sheetId || Object.values(CFG.csvUrls || {}).some(Boolean);
@@ -1325,7 +1325,7 @@ window.DPR_EMR_MAP = {
       try {
         const url = CFG.csvUrls?.pl_emr || `https://docs.google.com/spreadsheets/d/${CFG.sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CFG.tabs.pl_emr)}`;
         const text = await (await fetch(url, { cache: "no-store" })).text();
-        const rows = normalise("pl", Papa.parse(text, { header: true, skipEmptyLines: true }).data).map(r => ({ ...r, _source: "EMR" }));
+        const rows = normalise("pl", Papa.parse(text, { header: true, skipEmptyLines: true }).data).filter(r => r.site_id !== "Site ID").map(r => ({ ...r, _source: "EMR" }));   // skip header rows left by manual appends
         if (!/Care status \(6m\)|RoC ID \(CCC\)/.test(text.split("\n")[0])) throw new Error("tab not found or not in the EMR extract format");
         RAW.pl = RAW.pl.map(r => ({ ...r, _source: r._source || "ODK" })).concat(rows);
       } catch (e) { errs.push(`EMR extract (tab "${CFG.tabs.pl_emr}"): ${e.message}`); }
@@ -1506,7 +1506,7 @@ window.DPR_EMR_MAP = {
     $("#tab-progress").innerHTML = `
       <div class="kpis">
         ${kpi(`${sel.filter(s => hfSites.has(s.id)).length} / ${sel.length}`, "Selected sites with HF assessment", `${scope.filter(s => s.type === "reserve" && hfSites.has(s.id)).length} reserve site(s) used`)}
-        ${kpi(D.pl.length.toLocaleString(), "Patient records abstracted", `12-month: ${D.pl.filter(r => r.cohort === "1").length} · 24-month: ${D.pl.filter(r => r.cohort === "2").length}`)}
+        ${kpi(D.pl.length.toLocaleString(), "Patient records abstracted", `12-month: ${D.pl.filter(r => r.cohort === "1").length} · 24-month: ${D.pl.filter(r => r.cohort === "2").length}${(() => { const e = D.pl.filter(r => (r.data_source || r._source) === "EMR").length; return e ? ` · ODK: ${D.pl.length - e} · EMR: ${e}` : ""; })()}`)}
         ${kpi(D.kii.length, "Key informant interviews")}
         ${kpi(Object.keys(flags).length, "Sites with red flags", "see table below")}
       </div>
@@ -1609,7 +1609,7 @@ window.DPR_EMR_MAP = {
     const cs = CFG.counties.filter(c => P.some(r => SITE[r._site]?.county === c));
     $("#tab-patients").innerHTML = `
       <div class="kpis">
-        ${kpi(P.length.toLocaleString(), "Patient records", `${P.filter(r => r.cohort === "1").length} in 12-month · ${P.filter(r => r.cohort === "2").length} in 24-month cohort`)}
+        ${kpi(P.length.toLocaleString(), "Patient records", `${P.filter(r => r.cohort === "1").length} in 12-month · ${P.filter(r => r.cohort === "2").length} in 24-month cohort${(() => { const e = P.filter(r => (r.data_source || r._source) === "EMR").length; return e ? ` · ODK: ${P.length - e} · EMR: ${e}` : ""; })()}`)}
         ${kpi(p("ret_12m") != null ? p("ret_12m") + "%" : "–", "Active on ART at 12 months", fmtPct(...I.ret_12m))}
         ${kpi(p("vls_12m") != null ? p("vls_12m") + "%" : "–", "VL suppressed (<200) at 12 months", fmtPct(...I.vls_12m))}
         ${kpi(p("cd4") != null ? p("cd4") + "%" : "–", "Baseline CD4 done", fmtPct(...I.cd4))}
