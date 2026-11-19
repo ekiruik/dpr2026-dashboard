@@ -1648,11 +1648,17 @@ window.DPR_EMR_MAP = {
     // HF assessments per county: distinct facilities assessed vs the county target (pilot counties have no target)
     const hfC = CFG.counties.filter(c => !PILOT.has(c) && (!F("#f-county") || F("#f-county") === c)).map(c => {
       const done = new Set(D.hf.filter(r => SITE[r._site]?.county === c).map(r => r._site)).size; return { c, done, sub: D.hf.filter(r => SITE[r._site]?.county === c).length }; });
+    // patient record abstraction: facilities with at least one Patient-Level record, by county
+    const plC = CFG.counties.filter(c => (!F("#f-county") || F("#f-county") === c) && D.pl.some(r => SITE[r._site]?.county === c)).map(c => {
+      const R = D.pl.filter(r => SITE[r._site]?.county === c), src = k => new Set(R.filter(r => (r.data_source || r._source || "ODK") === k).map(r => r._site)).size;
+      return { c, fac: new Set(R.map(r => r._site)).size, n: R.length, c1: R.filter(r => r.cohort === "1").length, c2: R.filter(r => r.cohort === "2").length, odk: src("ODK"), emr: src("EMR") }; });
+    const plFac = new Set(D.pl.map(r => r._site).filter(Boolean)).size;
     const hfDone = hfC.reduce((a, x) => a + Math.min(x.done, hfT), 0), hfTarget = hfT * hfC.length;
     $("#tab-progress").innerHTML = `
       <div class="kpis">
         ${kpi(`${hfC.reduce((a, x) => a + x.done, 0)} / ${hfTarget}`, `HF assessments (target ${hfT} per county)`, `${pct(hfDone, hfTarget) ?? 0}% of target · ${hfC.filter(x => x.done >= hfT).length} of ${hfC.length} counties complete`)}
         ${kpi(D.pl.length.toLocaleString(), "Patient records abstracted", `12-month: ${D.pl.filter(r => r.cohort === "1").length} · 24-month: ${D.pl.filter(r => r.cohort === "2").length}${(() => { const e = D.pl.filter(r => (r.data_source || r._source) === "EMR").length; return e ? ` · ODK: ${D.pl.length - e} · EMR: ${e}` : ""; })()}`)}
+        ${kpi(plFac, "Facilities with patient records abstracted", `${D.pl.length.toLocaleString()} records · ${(plFac ? Math.round(D.pl.length / plFac) : 0)} per facility on average`)}
         ${kpi(D.kii.length, "Key informant interviews")}
         ${kpi(Object.keys(flags).length, "Sites with red flags", "see table below")}
       </div>
@@ -1664,6 +1670,13 @@ window.DPR_EMR_MAP = {
             .concat(hfC.length > 1 ? [[`<b>Total</b>`, `<b>${hfC.reduce((a, x) => a + x.done, 0)}</b>`, `<b>${hfTarget}</b>`, `<b>${pct(hfDone, hfTarget) ?? 0}%</b>`, `<b>${hfC.reduce((a, x) => a + Math.max(hfT - x.done, 0), 0)}</b>`, `<b>${hfC.reduce((a, x) => a + x.sub, 0)}</b>`]] : []),
           [1, 2, 3, 4, 5])}</div>
       </div>
+      <h2>Patient record abstraction by county</h2>
+      <div class="card">${plC.length ? table(["County", "Facilities abstracted", "Patient records", "12-month cohort", "24-month cohort", "Facilities via ODK", "Facilities via EMR"],
+        plC.map(x => [x.c, `<b>${x.fac}</b>`, x.n.toLocaleString(), x.c1.toLocaleString(), x.c2.toLocaleString(), x.odk, x.emr])
+          .concat(plC.length > 1 ? [["<b>Total</b>", `<b>${plC.reduce((a, x) => a + x.fac, 0)}</b>`, `<b>${plC.reduce((a, x) => a + x.n, 0).toLocaleString()}</b>`,
+            `<b>${plC.reduce((a, x) => a + x.c1, 0).toLocaleString()}</b>`, `<b>${plC.reduce((a, x) => a + x.c2, 0).toLocaleString()}</b>`, `<b>${plC.reduce((a, x) => a + x.odk, 0)}</b>`, `<b>${plC.reduce((a, x) => a + x.emr, 0)}</b>`]] : []),
+        [1, 2, 3, 4, 5, 6]) : `<div class="empty">No patient records yet for this selection.</div>`}
+        <p class="note">Facilities abstracted = facilities with at least one Patient-Level record (ODK or EMR). A facility with both ODK and EMR records is counted in both source columns.</p></div>
       <h2>Submissions over time</h2>
       <div class="grid2">
         ${card("Health Facility Assessment – forms received per day", "c-days-hf", `Total: ${D.hf.length}`)}
