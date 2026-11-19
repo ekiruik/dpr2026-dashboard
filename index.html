@@ -1890,7 +1890,7 @@ window.DPR_EMR_MAP = {
     $("#tab-patients").innerHTML = `
       <div class="kpis">
         ${kpi(P.length.toLocaleString(), "Patient records", `${P.filter(r => r.cohort === "1").length} in 12-month · ${P.filter(r => r.cohort === "2").length} in 24-month cohort`)}
-        ${kpi(new Set(P.map(r => r._site).filter(Boolean)).size, "Health facilities the records come from", "facilities with at least one patient record")}
+        ${kpi(new Set(P.map(r => r._site).filter(Boolean)).size, "Health facilities the records come from", `linked to HF (MFL): ${new Set(P.filter(r => r._hf).map(r => r._site).filter(Boolean)).size} facilities`)}
         ${kpi(p("ret_12m") != null ? p("ret_12m") + "%" : "–", "Active on ART at 12 months", fmtPct(...I.ret_12m))}
         ${kpi(p("vls_12m") != null ? p("vls_12m") + "%" : "–", "VL suppressed (<200) at 12 months", fmtPct(...I.vls_12m))}
         ${kpi(p("cd4") != null ? p("cd4") + "%" : "–", "Baseline CD4 done", fmtPct(...I.cd4))}
