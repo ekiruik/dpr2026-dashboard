@@ -1752,12 +1752,10 @@ window.DPR_EMR_MAP = {
       <div class="card">${(() => {
         const fac = (rows, c) => new Set(rows.filter(r => SITE[r._site] && (!c || SITE[r._site].county === c)).map(r => r._site));
         const cs = CFG.counties.filter(c => (!F("#f-county") || F("#f-county") === c) && (!PILOT.has(c) || F("#f-pilot") !== "exclude" || F("#f-county") === c));
-        const line = (label, c) => { const h = fac(D.hf, c), p = fac(D.pl, c), k = fac(D.kii, c), all = new Set([...h, ...p, ...k]);
-          const three = [...all].filter(x => h.has(x) && p.has(x) && k.has(x)).length;
-          return [label, h.size, p.size, k.size, three, all.size]; };
+        const line = (label, c) => [label, fac(D.hf, c).size, fac(D.pl, c).size, fac(D.kii, c).size];
         const rows = cs.map(c => line(c + (PILOT.has(c) ? " (pilot)" : ""), c));
         if (cs.length > 1) { const t = line("<b>Total</b>", ""); rows.push(t.map((x, i) => i ? `<b>${x}</b>` : x)); }
-        return table(["County", "HF assessment", "Patient-Level", "KII", "All three tools", "Any tool"], rows, [1, 2, 3, 4, 5]);
+        return table(["County", "HF assessment", "Patient-Level", "KII"], rows, [1, 2, 3]);
       })()}
         <p class="note">Number of facilities with at least one record for each tool (Patient-Level includes ODK and EMR records).</p></div>
       <h2>Health Facility assessments by county (target ${hfT} per county)</h2>
