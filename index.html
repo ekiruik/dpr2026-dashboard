@@ -1484,6 +1484,19 @@ window.DPR_EMR_MAP = {
   /** Where a facility has both ODK and EMR records for the same cohort, only the EMR records are used
    *  (the ODK records of that facility and cohort are left out, so patients are not counted twice). */
   let ODK_DROPPED = 0;
+  /** Some EMR extracts write every date as YYYY-DD-MM. Per facility and cohort: if any EMR date has a "month" above 12
+   *  and none has a "day" above 12, all EMR dates of that group are turned round (2025-03-06 → 2025-06-03). */
+  function fixEmrDates() {
+    const isEmr = r => (r.data_source || r._source) === "EMR", groups = {};
+    RAW.pl.filter(isEmr).forEach(r => (groups[`${r._site}|${r.cohort}`] = groups[`${r._site}|${r.cohort}`] || []).push(r));
+    Object.values(groups).forEach(rows => {
+      let mid = 0, end = 0;
+      rows.forEach(r => Object.keys(r).forEach(k => { if (!/date/.test(k) || /_doc/.test(k) || k[0] === "_") return; const m = String(r[k]).match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) { if (+m[2] > 12) mid++; if (+m[3] > 12) end++; } }));
+      if (!mid || end) return;
+      rows.forEach(r => { Object.keys(r).forEach(k => { if (!/date/.test(k) || /_doc/.test(k) || k[0] === "_") return; const m = String(r[k]).match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) r[k] = `${m[1]}-${m[3]}-${m[2]}`; });
+        r._date = isoDate(r.collection_date || r._date); });
+    });
+  }
   function preferEmr() {
     const src = r => (r.data_source || r._source || "ODK") === "EMR" ? "EMR" : "ODK";
     const emr = new Set(RAW.pl.filter(r => src(r) === "EMR").map(r => `${r._site}|${r.cohort}`));
@@ -2252,6 +2265,7 @@ window.DPR_EMR_MAP = {
     $("#reload").disabled = true; $("#updated").textContent = "Loading…";
     await loadAll();
     linkHfToPatients();
+    fixEmrDates();
     preferEmr();
     $("#mode-badge").textContent = DEMO ? "DEMO DATA" : "Live data"; $("#mode-badge").className = "badge" + (DEMO ? " demo" : "");
     if (DEMO) banner("Demo mode: the numbers below are made up. Put your Google Sheet ID in <code>config.js</code> to show the real assessment data.");
