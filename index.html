@@ -1412,7 +1412,9 @@ window.DPR_EMR_MAP = {
   /** dd/mm/yyyy, d/m/yyyy or yyyy-mm-dd(Thh:mm) → yyyy-mm-dd */
   function isoDate(v) {
     v = String(v || "").trim(); const m = v.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
-    return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : v.slice(0, 10);
+    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    const y = v.match(/^(\d{4})-(\d{2})-(\d{2})/);                       // YYYY-DD-MM written by some EMR exports
+    return y && +y[2] > 12 && +y[3] <= 12 ? `${y[1]}-${y[3]}-${y[2]}` : v.slice(0, 10);
   }
   function normalise(form, rows) {
     if (!rows.length) return [];
@@ -1478,6 +1480,16 @@ window.DPR_EMR_MAP = {
   const SITE_BY_NAME = {};
   SITES.forEach(s => [s.name, String(s.name).replace(/\s*\(.*?\)|\s*–.*$/g, ""), ...(s.aliases || [])].forEach(n => { if (nameKey(n)) SITE_BY_NAME[nameKey(n)] = s.id; }));
   const siteByName = (...names) => { for (const n of names) { const k = nameKey(n); if (k && SITE_BY_NAME[k]) return SITE_BY_NAME[k]; } return ""; };
+  /** Where a facility has both ODK and EMR records for the same cohort, only the EMR records are used
+   *  (the ODK records of that facility and cohort are left out, so patients are not counted twice). */
+  let ODK_DROPPED = 0;
+  function preferEmr() {
+    const src = r => (r.data_source || r._source || "ODK") === "EMR" ? "EMR" : "ODK";
+    const emr = new Set(RAW.pl.filter(r => src(r) === "EMR").map(r => `${r._site}|${r.cohort}`));
+    const before = RAW.pl.length;
+    RAW.pl = RAW.pl.filter(r => src(r) === "EMR" || !emr.has(`${r._site}|${r.cohort}`));
+    ODK_DROPPED = before - RAW.pl.length;
+  }
   function linkHfToPatients() {
     // every form: the MFL code wins (e.g. a record saved under U02 with MFL 15758 belongs to U17), then the facility name
     const mflSite = {}; SITES.forEach(s => { if (mflKey(s.mfl)) mflSite[mflKey(s.mfl)] = s.id; });
@@ -2224,6 +2236,7 @@ window.DPR_EMR_MAP = {
     $("#reload").disabled = true; $("#updated").textContent = "Loading…";
     await loadAll();
     linkHfToPatients();
+    preferEmr();
     $("#mode-badge").textContent = DEMO ? "DEMO DATA" : "Live data"; $("#mode-badge").className = "badge" + (DEMO ? " demo" : "");
     if (DEMO) banner("Demo mode: the numbers below are made up. Put your Google Sheet ID in <code>config.js</code> to show the real assessment data.");
     $("#updated").textContent = `Updated ${new Date().toLocaleString()}`; $("#reload").disabled = false;
