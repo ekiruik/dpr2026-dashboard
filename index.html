@@ -1980,6 +1980,78 @@ window.DPR_EMR_MAP = {
         return [esc(k), fit.n, fit.events, ...types.map(t => c[t] || 0), f(fit.at(6)), tmax >= 10 ? f(fit.at(12)) : "–", tmax >= 22 ? f(fit.at(24)) : "–"]; }),
       [1, 2, 3, 4, 5, 6]) + (noDate ? `<p class="note">${noDate} record(s) left out: no valid ART start date.</p>` : "");
   }
+  // ---------------------------------------------------------------- cascades (TB, TPT, AHD, VL) by county
+  /** Each step: label, test(r), base = index of the step it is a subset of (default: the step before; -1 = all records).
+   *  % = n ÷ n of the base step. */
+  const has = (v, c) => String(v ?? "").split(/\s+/).includes(c);
+  const CASCADES = [
+    { id: "tb", title: "TB cascade (baseline)", steps: [
+      ["Records (started ART)", () => true, -1],
+      ["Screened for TB at ART start", r => has(r.baseline_screening, "1") || ["1", "2", "3", "4", "5"].includes(r.tb_screen_result)],
+      ["Presumptive TB, diagnosed or on TB treatment", r => ["2", "3", "4"].includes(r.tb_screen_result)],
+      ["Tested (TB-LAM or Xpert)", r => r.tb_lam_test === "1" || r.xpert_mtb_test === "1", 2],
+      ["TB diagnosed (test positive, or diagnosed / on treatment at screening)", r => ["3", "4"].includes(r.tb_screen_result) || r.tb_lam_result === "2" || ["2", "3"].includes(r.xpert_mtb_result), 2],
+      ["Started TB treatment", r => r.tb_tx_started === "1" || r.tb_screen_result === "4", 4],
+      ["Completed TB treatment", r => r.tb_tx_outcome === "2" || r.tb_tx_status_last === "2", 5]] },
+    { id: "tpt", title: "TPT cascade", steps: [
+      ["Records (started ART)", () => true, -1],
+      ["Eligible for TPT", r => r.tpt_eligible === "1"],
+      ["Started TPT", r => r.tpt_introduced === "1" || ["1", "2"].includes(r.tpt_status_init)],
+      ["Completed TPT", r => ["6m", "12m", "24m"].some(t => r[`tpt_status_${t}`] === "5")]] },
+    { id: "ahd", title: "Advanced HIV disease (AHD) cascade", steps: [
+      ["Records (started ART)", () => true, -1],
+      ["Baseline CD4 done", r => r.cd4_test_baseline === "1"],
+      ["AHD (CD4 <200 or age <5)", r => r.cd4_result === "1" || (num(r.age) ?? 99) < 5, 0],
+      ["TB-LAM done (AHD)", r => r.tb_lam_test === "1", 2],
+      ["CrAg done (AHD)", r => r.crag_test === "1", 2],
+      ["CrAg positive", r => r.crag_result === "2", 4],
+      ["Cryptococcal meningitis treatment started", r => r.cm_tx_started === "1", 5]] },
+    { id: "vl", title: "Viral load cascade (12 months)", steps: [
+      ["Active on ART at 12 months", r => r.care_status_12m === "1", -1],
+      ["VL done", r => r.vl_done_12m === "1"],
+      ["VL result documented", r => ["1", "2", "3"].includes(r.vl_result_12m)],
+      ["Suppressed (<200 copies/mL)", r => r.vl_result_12m === "1"],
+      ["Not suppressed (≥200 copies/mL)", r => ["2", "3"].includes(r.vl_result_12m), 2],
+      ["Enhanced adherence counselling received", r => r.eac_received_12m === "1"],
+      ["EAC completed", r => r.eac_complete_12m === "1"],
+      ["Repeat VL done", r => r.repeat_vl_done_12m === "1"],
+      ["Repeat VL suppressed", r => r.repeat_vl_result_12m === "1"]] }
+  ];
+  /** Runs a cascade on records → [{label, base, rows}] */
+  function cascadeRun(cs, rows) {
+    const out = [];
+    cs.steps.forEach(([label, test, base], i) => {
+      const b = base === undefined ? i - 1 : base, from = b < 0 ? rows : out[b].rows;
+      out.push({ label, base: b, rows: from.filter(r => { try { return test(r); } catch (e) { return false; } }) });
+    });
+    return out;
+  }
+  let CASC_ID = "tb";
+  function cascadeSection() {
+    return `<h2>Cascades by county</h2>
+      <div class="card">
+        <div class="kmbar"><label>Cascade <select id="casc-id">${CASCADES.map(c => `<option value="${c.id}"${c.id === CASC_ID ? " selected" : ""}>${c.title}</option>`).join("")}</select></label></div>
+        <div class="chart tall"><canvas id="c-casc" role="img" aria-label="Cascade by county"></canvas></div>
+        <div id="casc-table"></div>
+        <p class="note">% = n ÷ the step it follows from (shown in brackets in the first column). Records as filtered above; Patient-Level ODK + EMR.</p>
+      </div>`;
+  }
+  function renderCascade(P) {
+    const cs = CASCADES.find(c => c.id === CASC_ID) || CASCADES[0];
+    const cos = CFG.counties.filter(c => P.some(r => SITE[r._site]?.county === c));
+    const groups = [["Total", P], ...cos.map(c => [c, P.filter(r => SITE[r._site]?.county === c)])];
+    const runs = groups.map(([g, rows]) => [g, cascadeRun(cs, rows)]);
+    const steps = runs[0][1];
+    const cell = (st, i, run) => { const n = run[i].rows.length, b = run[i].base < 0 ? null : run[run[i].base].rows.length;
+      return b == null ? n.toLocaleString() : `${n.toLocaleString()} (${b ? pct(n, b) + "%" : "–"})`; };
+    $("#casc-table").innerHTML = table(["Step", ...groups.map(g => g[0] === "Total" ? "<b>Total</b>" : g[0])],
+      steps.map((s, i) => [esc(s.label) + (s.base >= 0 ? ` <span class="muted">(of step ${s.base + 1})</span>` : ""), ...runs.map(([, run]) => cell(s, i, run))]),
+      groups.map((_, i) => i + 1));
+    chart("c-casc", "bar", steps.map((s, i) => `${i + 1}. ${s.label}`), runs.filter(([g]) => g !== "Total" || runs.length === 2).map(([g, run], k) => ({
+      label: g, data: run.map(s => s.base < 0 ? 100 : (run[s.base].rows.length ? pct(s.rows.length, run[s.base].rows.length) : null)),
+      nd: run.map(s => `${s.rows.length}/${s.base < 0 ? s.rows.length : run[s.base].rows.length}`) })), { pct: true });
+  }
+
   function renderPatients(D) {
     const P = D.pl, I = ind(P), p = k => pct(...I[k]);
     const hfModel = Object.fromEntries(RAW.hf.map(r => [r._site, r.b15]));
@@ -2012,6 +2084,7 @@ window.DPR_EMR_MAP = {
             const name = k === "~" ? "Not yet assessed" : v ? label("hf", v, k) : k === "eligible" ? "Yes" : k === "not_eligible" ? "No" : k;
             return [i ? "" : `<b>${title}</b>`, esc(name), new Set(rows.map(r => r._site)).size, rows.length, fmtPct(...x.ret_6m), fmtPct(...x.ret_12m), fmtPct(...x.vls_12m), fmtPct(...x.cd4), fmtPct(...x.tpt)]; }); }),
         [2, 3, 4, 5, 6, 7, 8])}</div>
+      ${cascadeSection()}
       ${kmSection()}
       <h2>Indicators by county</h2>
       <div class="card">${table(["County", "Records", "Active 6m", "Active 12m", "Active 24m", "VL suppressed 12m", "Baseline CD4 done", "TPT started (eligible)"],
@@ -2023,6 +2096,8 @@ window.DPR_EMR_MAP = {
     const ac = [["cd4", "CD4 done"], ["ahd", "AHD at baseline"], ["lam", "TB-LAM (AHD)"], ["xpert", "Xpert (AHD)"], ["crag", "CrAg (AHD)"]];
     chart("c-ahdc", "bar", ac.map(a => a[1]), [{ label: "Records", data: ac.map(([k]) => pct(...I[k])), nd: ac.map(([k]) => I[k].join("/")) }], { horizontal: true, pct: true, labels: true });
     const mg = groups.map(([k]) => ind(P.filter(r => model(r) === k)).ret_12m);
+    renderCascade(P);
+    $("#casc-id").addEventListener("change", e => { CASC_ID = e.target.value; renderCascade(P); });
     renderKM(P);
     $("#km-by").addEventListener("change", e => { KM_BY = e.target.value; renderKM(P); });
     chart("c-model12", "bar", groups.map(g => g[1]), [{ label: "Active at 12 months", data: mg.map(x => pct(...x)), nd: mg.map(x => x.join("/")) }], { horizontal: true, pct: true, labels: true });
@@ -2270,6 +2345,18 @@ window.DPR_EMR_MAP = {
     TOOLS.forEach(([t, , name]) => counties.forEach(c => { const R = D[t].filter(r => cty(r) === c); if (!R.length) return;
       const e = R.filter(r => (r.data_source || r._source) === "EMR").length; sum.push([name, c, R.length, new Set(R.map(r => r._site)).size, R.length - e, e]); }));
     sheets.push({ name: "Records summary", widths: [30, 16, 10, 10, 12, 12], rows: sum });
+    // cascades by county (Patient-Level), as on the Patient outcomes tab
+    { const P = D.pl, cos = CFG.counties.filter(c => P.some(r => SITE[r._site]?.county === c));
+      const groups = [["Total", P], ...cos.map(c => [c, P.filter(r => SITE[r._site]?.county === c)])];
+      const rows = [["Cascade / step", "% of", ...groups.flatMap(([g]) => [`${g} n`, `${g} %`])]], shade = new Set(), indent = new Set();
+      CASCADES.forEach(cs => {
+        rows.push([cs.title, "", ...groups.flatMap(() => ["", ""])]); shade.add(rows.length - 1);
+        const runs = groups.map(([, rr]) => cascadeRun(cs, rr));
+        runs[0].forEach((st, i) => { rows.push([`${i + 1}. ${st.label}`, st.base < 0 ? "" : `step ${st.base + 1}`,
+          ...runs.flatMap(run => { const n = run[i].rows.length, b = run[i].base < 0 ? null : run[run[i].base].rows.length; return [n, b == null ? "" : b ? r1(100 * n / b) : ""]; })]);
+          indent.add(rows.length - 1); });
+      });
+      sheets.push({ name: "Cascades by county", rows, shade, indent, widths: [52, 9, ...groups.flatMap(() => [9, 8])] }); }
     // one table per tool, gtsummary style: Characteristic | n | %
     //   question (bold) → its answers (indented, n and % of those who answered) → Unknown (blank, n only);
     //   numeric questions → Median (Q1, Q3) and Mean (SD); dates → earliest – latest
