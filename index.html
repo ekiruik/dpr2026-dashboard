@@ -211,6 +211,7 @@ License: MIT
     <span id="updated" class="muted"></span>
     <button id="reload" type="button">Refresh data</button>
     <button id="dl-freq" type="button" title="Frequencies for all tools, with the current filters">Download frequencies (Excel)</button>
+    <button id="dl-pl" type="button" title="All Patient-Level records (ODK + EMR) with every variable, cleaned">Download Patient-Level data (Excel)</button>
     <button id="theme" type="button">Dark / light</button>
     <button id="logout" type="button" hidden>Log out</button>
   </div>
@@ -1484,7 +1485,7 @@ window.DPR_EMR_MAP = {
   const siteByName = (...names) => { for (const n of names) { const k = nameKey(n); if (k && SITE_BY_NAME[k]) return SITE_BY_NAME[k]; } return ""; };
   /** Where a facility has both ODK and EMR records for the same cohort, only the EMR records are used
    *  (the ODK records of that facility and cohort are left out, so patients are not counted twice). */
-  let ODK_DROPPED = 0;
+  let ODK_DROPPED = 0, PL_ALL = [];
   /** Some EMR extracts write every date as YYYY-DD-MM. Per facility and cohort: if any EMR date has a "month" above 12
    *  and none has a "day" above 12, all EMR dates of that group are turned round (2025-03-06 → 2025-06-03). */
   function fixEmrDates() {
@@ -2426,6 +2427,51 @@ window.DPR_EMR_MAP = {
     a.download = `DPR2026_Frequencies_${new Date().toISOString().slice(0, 10)}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
   }
 
+  // ---------------------------------------------------------------- download: merged Patient-Level dataset (Excel)
+  /** All Patient-Level records (ODK + EMR) with every variable, after cleaning; one row per record.
+   *  Sheets: data with ODK codes, the same data with answer labels, and the variable list. */
+  function downloadMergedPL() {
+    const rows = PL_ALL.length ? PL_ALL : RAW.pl;
+    const kept = new Set(RAW.pl);                                   // records used in the analysis (after the EMR rule)
+    const emrSites = new Set(rows.filter(r => (r.data_source || r._source) === "EMR").map(r => `${r._site}|${r.cohort}`));
+    // columns: form order first, then any other columns found in the data (system, HF link …); identifiers never exported
+    const NOT = new Set(["roc_id", "dob", "data_collector_id", "username", "deviceid", "phonenumber", "devicephonenum"]);
+    const seen = new Set(); rows.forEach(r => Object.keys(r).forEach(k => { if (k[0] !== "_" && !NOT.has(k)) seen.add(k); }));
+    const formOrder = Object.keys(CODES.pl.q || {});
+    const cols = ["SubmissionDate", ...formOrder, ...[...seen].filter(k => !formOrder.includes(k) && k !== "SubmissionDate")].filter(k => seen.has(k) && k !== "data_source");
+    const extra = ["record_no", "data_source", "site_id_final", "facility_final", "mfl_final", "county_final", "sub_county_final", "site_matched", "pilot_site", "in_analysis", "not_in_analysis_reason"];
+    const derive = (r, i) => { const s = SITE[r._site] || {}, src = (r.data_source || r._source) === "EMR" ? "EMR" : "ODK", inA = kept.has(r) && !PILOT.has(s.county);
+      return [i + 1, src, r._site || "", s.name || r.facility_name || "", s.mfl || r.mfl_code || "", s.county || "", s.sub_county || "", SITE[r._site] ? "Yes" : "No", PILOT.has(s.county) ? "Yes" : "No",
+        inA ? "Yes" : "No", inA ? "" : PILOT.has(s.county) ? "Pilot county (Nairobi)" : src === "ODK" && emrSites.has(`${r._site}|${r.cohort}`) ? "Same facility + cohort has EMR records" : "Not matched to a study facility"]; };
+    const val = v => v == null ? "" : /^-?\d+(\.\d+)?$/.test(String(v)) && String(v).length < 15 && !/^0\d/.test(String(v)) ? +v : String(v);
+    const lab = (k, v) => { const d = CODES.pl.vars[k]; if (!d || v == null || v === "") return val(v);
+      const L = CODES.pl.lists[d.list] || {}; return String(v).split(d.multi ? /\s+/ : /$^/).map(c => L[c] ?? c).join(d.multi ? "; " : ""); };
+    const head = [...extra, ...cols];
+    const codes = [head, ...rows.map((r, i) => [...derive(r, i), ...cols.map(k => val(r[k]))])];
+    const labels = [head, ...rows.map((r, i) => [...derive(r, i), ...cols.map(k => lab(k, r[k]))])];
+    const dict = [["Variable", "Question", "Type", "Answer codes"],
+      ...extra.map(k => [k, { record_no: "Row number in this file", data_source: "ODK Central or EMR extract", site_id_final: "Study site after facility matching",
+        facility_final: "Facility name (site list)", mfl_final: "MFL code (site list)", county_final: "County (site list)", sub_county_final: "Sub-county (site list)",
+        site_matched: "Yes = matched to a study site on the site list; No = facility not recognised (check site ID / MFL)", pilot_site: "Nairobi pilot facility", in_analysis: "Used in the dashboard figures (No = pilot, or ODK record replaced by EMR for the same facility + cohort)",
+        not_in_analysis_reason: "Why the record is not used" }[k], "derived", ""]),
+      ...cols.map(k => { const q = CODES.pl.q?.[k], d = CODES.pl.vars[k];
+        return [k, q?.l || (/^hf_/.test(k) ? "From the HF assessment of the same facility (linked by MFL)" : "System / sync field"), q?.t || (d ? (d.multi ? "select_multiple" : "select_one") : "text"),
+          d ? Object.entries(CODES.pl.lists[d.list] || {}).map(([c, l]) => `${c} = ${l}`).join("; ") : ""]; })];
+    const w = [9, 8, 9, 30, 8, 12, 14, 8, 8, 8, 28, ...cols.map(() => 14)];
+    const sheets = [
+      { name: "README", widths: [26, 110], rows: [["Item", "Note"], ["Generated", new Date().toLocaleString("en-GB")], ["Data", DEMO ? "DEMO DATA (made up)" : "Live data from the Google Sheet"],
+        ["Records", `${rows.length} Patient-Level records (ODK ${rows.filter(r => (r.data_source || r._source) !== "EMR").length}, EMR ${rows.filter(r => (r.data_source || r._source) === "EMR").length}); ${rows.filter((r, i) => derive(r, i)[9] === "Yes").length} used in the analysis (in_analysis = Yes)`],
+        ["Sheets", "Data (codes) = ODK answer codes; Data (labels) = the same data with answer labels; Variables = question wording and codes"],
+        ["Not included", "Client identifiers (RoC ID / CCC, date of birth) and data collector IDs"],
+        ["Cleaning", "See the Assumptions & cleaning sheet"]] },
+      { name: "Assumptions & cleaning", widths: [6, 34, 120], rows: [["#", "Item", "Data cleaning rule / assumption"], ...ASSUMPTIONS.map(([k, t], i) => [i + 1, k, t])] },
+      { name: "Data (codes)", rows: codes, widths: w },
+      { name: "Data (labels)", rows: labels, widths: w },
+      { name: "Variables", rows: dict, widths: [26, 70, 16, 90] }];
+    const a = document.createElement("a"); a.href = URL.createObjectURL(xlsxBlob(sheets));
+    a.download = `DPR2026_PatientLevel_merged_${new Date().toISOString().slice(0, 10)}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+  }
+
   // ---------------------------------------------------------------- tab: KII
   function renderKII(D) {
     const K = D.kii, sites = new Set(K.map(r => r._site));
@@ -2487,6 +2533,7 @@ window.DPR_EMR_MAP = {
     await loadAll();
     linkHfToPatients();
     fixEmrDates();
+    PL_ALL = RAW.pl.slice();                 // every Patient-Level record (ODK + EMR), cleaned – for the merged download
     preferEmr();
     $("#mode-badge").textContent = DEMO ? "DEMO DATA" : "Live data"; $("#mode-badge").className = "badge" + (DEMO ? " demo" : "");
     if (DEMO) banner("Demo mode: the numbers below are made up. Put your Google Sheet ID in <code>config.js</code> to show the real assessment data.");
@@ -2512,6 +2559,7 @@ window.DPR_EMR_MAP = {
     $("#f-pilot").addEventListener("change", () => { cascade(); render(); });
     $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); $("#f-pilot").value = "exclude"; cascade(); render(); });
     $("#reload").addEventListener("click", refresh);
+    $("#dl-pl").addEventListener("click", () => { try { downloadMergedPL(); } catch (e) { banner("Could not build the Patient-Level file: " + e.message, true); } });
     $("#dl-freq").addEventListener("click", () => { try { downloadFrequencies(); } catch (e) { banner("Could not build the frequency file: " + e.message, true); } });
     $("#logout").addEventListener("click", () => { try { sessionStorage.removeItem("dpr-session"); } catch (e) {} location.reload(); });
     try { const t = localStorage.getItem("dpr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
