@@ -210,6 +210,7 @@ License: MIT
     <span id="mode-badge" class="badge"></span>
     <span id="updated" class="muted"></span>
     <button id="reload" type="button">Refresh data</button>
+    <button id="dl-freq" type="button" title="Frequencies for all tools, with the current filters">Download frequencies (Excel)</button>
     <button id="theme" type="button">Dark / light</button>
     <button id="logout" type="button" hidden>Log out</button>
   </div>
@@ -2205,6 +2206,111 @@ window.DPR_EMR_MAP = {
 </div>`;
   }
 
+  // ---------------------------------------------------------------- download: frequencies for all tools (Excel)
+  /** Minimal .xlsx writer (no library): sheets = [{ name, rows: [[…]], widths: [], shade: Set(row indexes) }]. */
+  function xlsxBlob(sheets) {
+    const enc = new TextEncoder(), esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+    const col = i => { let s = ""; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - m - 1) / 26; } return s; };
+    const sheetXml = sh => {
+      const rows = sh.rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((v, ci) => {
+        if (v == null || v === "") return "";
+        const ref = col(ci) + (ri + 1), st = ri === 0 ? 1 : sh.shade && sh.shade.has(ri) ? 2 : 0;
+        return typeof v === "number" && isFinite(v) ? `<c r="${ref}" s="${st}"><v>${v}</v></c>`
+          : `<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+      }).join("") + "</row>").join("");
+      const cols = (sh.widths || []).map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("");
+      const last = col(Math.max(1, sh.rows[0]?.length || 1) - 1) + Math.max(1, sh.rows.length);
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${rows}</sheetData>${sh.rows.length > 1 ? `<autoFilter ref="A1:${last}"/>` : ""}</worksheet>`;
+    };
+    const names = sheets.map((s, i) => (s.name.replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || `Sheet${i + 1}`));
+    const files = [
+      ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`],
+      ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+      ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n, i) => `<sheet name="${esc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets><definedNames>${sheets.map((s, i) => s.rows.length > 1 ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${esc(names[i]).replace(/'/g, "''")}'!$A$1:$${col(s.rows[0].length - 1)}$${s.rows.length}</definedName>` : "").join("")}</definedNames></workbook>`],
+      ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+      ["xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F1"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`],
+      ...sheets.map((s, i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)])
+    ].map(([n, t]) => [enc.encode(n), enc.encode(t)]);
+    // ZIP (stored, no compression)
+    const crcT = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    const crc = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = crcT[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+    const parts = [], central = []; let off = 0;
+    const u16 = v => [v & 255, (v >>> 8) & 255], u32 = v => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+    files.forEach(([name, data]) => {
+      const c = crc(data), head = new Uint8Array([...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(c), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+      parts.push(head, name, data);
+      central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(c), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), name);
+      off += head.length + name.length + data.length;
+    });
+    const cdLen = central.reduce((a, b) => a + b.length, 0);
+    const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdLen), ...u32(off), ...u16(0)]);
+    return new Blob([...parts, ...central, end], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  }
+
+  /** Frequencies for every coded question of each tool (records as currently filtered), by county; numeric and date summaries. */
+  function downloadFrequencies() {
+    const D = filtered(), NOT = new Set(["roc_id", "dob", "data_collector_id", "username", "deviceid", "phonenumber", "devicephonenum"]);
+    const TOOLS = [["hf", "HF", "Health Facility Assessment"], ["pl", "PL", "Patient-Level"], ["kii", "KII", "HCW Key Informant Interview"]];
+    const cty = r => SITE[r._site]?.county || (r.county ? String(r.county).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Unknown");
+    const counties = [...new Set(TOOLS.flatMap(([t]) => D[t].map(cty)))].sort();
+    const r1 = x => Math.round(x * 10) / 10;
+    const sheets = [];
+    const filt = [["County", F("#f-county")], ["Sub-county", F("#f-sub")], ["Facility", F("#f-fac")], ["Facility level", F("#f-level")], ["Ownership", F("#f-own")],
+      ["Integration model", F("#f-model")], ["Patient data source", F("#f-src")], ["Pilot sites", F("#f-pilot") || "exclude"]].filter(x => x[1]);
+    sheets.push({ name: "README", widths: [26, 110], rows: [["Item", "Note"],
+      ["Generated", new Date().toLocaleString("en-GB")], ["Data", DEMO ? "DEMO DATA (made up)" : "Live data from the Google Sheet"],
+      ["Filters applied", filt.length ? filt.map(x => `${x[0]}: ${x[1]}`).join("; ") : "none"],
+      ["Patient-Level", "ODK + EMR; where a facility + cohort has EMR records, its ODK records are left out (as on the dashboard)"],
+      ["Select one", "% = n ÷ records that answered the question"],
+      ["Select multiple", "% = n ÷ records that answered; one record can give several answers, so % can add up to more than 100"],
+      ["Missing", "'Missing / not asked' = blank (skip logic or not filled)"],
+      ["Excluded", "Client identifiers (RoC ID, date of birth) and data collector IDs are never included"]] });
+    // records summary
+    const sum = [["Tool", "County", "Records", "Facilities", "ODK records", "EMR records"]];
+    TOOLS.forEach(([t, , name]) => counties.forEach(c => { const R = D[t].filter(r => cty(r) === c); if (!R.length) return;
+      const e = R.filter(r => (r.data_source || r._source) === "EMR").length; sum.push([name, c, R.length, new Set(R.map(r => r._site)).size, R.length - e, e]); }));
+    sheets.push({ name: "Records summary", widths: [30, 16, 10, 10, 12, 12], rows: sum });
+    TOOLS.forEach(([t, short]) => {
+      const R = D[t], C = CODES[t], Q = C.q || {}, order = Object.keys(Q);
+      const vars = order.filter(v => C.vars[v] && !NOT.has(v) && R.some(r => r[v] !== undefined));
+      const head = ["Variable", "Question", "Type", "Code", "Answer", "Answered (denominator)", "Total n", "Total %", ...counties.flatMap(c => [`${c} n`, `${c} %`])];
+      const rows = [head], shade = new Set();
+      vars.forEach(v => {
+        const d = C.vars[v], L = C.lists[d.list] || {}, lab = Q[v]?.l || v, type = d.multi ? "Select multiple" : "Select one";
+        const ans = R.filter(r => !blank(r[v])), byC = c => ans.filter(r => cty(r) === c);
+        const cnt = (rows, code) => rows.filter(r => d.multi ? String(r[v]).split(/\s+/).includes(code) : String(r[v]).trim() === code).length;
+        const extra = [...new Set(ans.flatMap(r => d.multi ? String(r[v]).split(/\s+/) : [String(r[v]).trim()]))].filter(c => !(c in L));
+        shade.add(rows.length);
+        [...Object.keys(L), ...extra].forEach(code => {
+          const n = cnt(ans, code);
+          rows.push([v, lab, type, code, L[code] ?? `${code}  (not an ODK code)`, ans.length, n, ans.length ? r1(100 * n / ans.length) : "",
+            ...counties.flatMap(c => { const a = byC(c), k = cnt(a, code); return [k, a.length ? r1(100 * k / a.length) : ""]; })]);
+        });
+        rows.push([v, lab, type, "", "Missing / not asked (blank)", ans.length, R.length - ans.length, "",
+          ...counties.flatMap(c => [R.filter(r => cty(r) === c && blank(r[v])).length, ""])]);
+      });
+      sheets.push({ name: `${short} frequencies`, rows, shade, widths: [24, 55, 14, 8, 42, 12, 9, 9, ...counties.flatMap(() => [10, 9])] });
+      // numeric
+      const nv = order.filter(v => ["integer", "decimal"].includes(Q[v].t) && !NOT.has(v) && R.some(r => r[v] !== undefined));
+      if (nv.length) {
+        const st = rows => { const x = rows.map(r => num(r[v_])).filter(z => z != null).sort((a, b) => a - b), n = x.length;
+          const q = p => n ? x[Math.min(n - 1, Math.floor(p * (n - 1)))] + (p * (n - 1) % 1) * ((x[Math.min(n - 1, Math.floor(p * (n - 1)) + 1)] ?? x[n - 1]) - x[Math.floor(p * (n - 1))]) : "";
+          const m = n ? x.reduce((a, b) => a + b, 0) / n : 0, sd = n > 1 ? Math.sqrt(x.reduce((a, b) => a + (b - m) ** 2, 0) / (n - 1)) : "";
+          return [n, rows.length - n, n ? r1(m) : "", sd === "" ? "" : r1(sd), n ? q(.5) : "", n ? q(.25) : "", n ? q(.75) : "", n ? x[0] : "", n ? x[n - 1] : ""]; };
+        let v_;
+        const rows2 = [["Variable", "Question", "Group", "n", "Missing", "Mean", "SD", "Median", "Q1", "Q3", "Min", "Max"]];
+        nv.forEach(v => { v_ = v; rows2.push([v, Q[v].l, "Total", ...st(R)]); counties.forEach(c => { const a = R.filter(r => cty(r) === c); if (a.length) rows2.push([v, Q[v].l, c, ...st(a)]); }); });
+        sheets.push({ name: `${short} numeric`, rows: rows2, widths: [24, 55, 14, 8, 9, 9, 9, 9, 9, 9, 9, 9] });
+      }
+      // dates
+      const dv = order.filter(v => Q[v].t === "date" && !NOT.has(v) && R.some(r => r[v] !== undefined));
+      if (dv.length) sheets.push({ name: `${short} dates`, widths: [24, 55, 8, 9, 12, 12], rows: [["Variable", "Question", "n", "Missing", "Earliest", "Latest"],
+        ...dv.map(v => { const x = R.map(r => isoDate(r[v])).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s))).sort(); return [v, Q[v].l, x.length, R.length - x.length, x[0] || "", x[x.length - 1] || ""]; })] });
+    });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(xlsxBlob(sheets));
+    a.download = `DPR2026_Frequencies_${new Date().toISOString().slice(0, 10)}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+  }
+
   // ---------------------------------------------------------------- tab: KII
   function renderKII(D) {
     const K = D.kii, sites = new Set(K.map(r => r._site));
@@ -2289,6 +2395,7 @@ window.DPR_EMR_MAP = {
     $("#f-pilot").addEventListener("change", () => { cascade(); render(); });
     $("#f-clear").addEventListener("click", () => { document.querySelectorAll(".filters select").forEach(x => x.value = ""); $("#f-pilot").value = "exclude"; cascade(); render(); });
     $("#reload").addEventListener("click", refresh);
+    $("#dl-freq").addEventListener("click", () => { try { downloadFrequencies(); } catch (e) { banner("Could not build the frequency file: " + e.message, true); } });
     $("#logout").addEventListener("click", () => { try { sessionStorage.removeItem("dpr-session"); } catch (e) {} location.reload(); });
     try { const t = localStorage.getItem("dpr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
     $("#theme").addEventListener("click", () => {
