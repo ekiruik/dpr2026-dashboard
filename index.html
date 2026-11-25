@@ -2214,7 +2214,7 @@ window.DPR_EMR_MAP = {
     const sheetXml = sh => {
       const rows = sh.rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((v, ci) => {
         if (v == null || v === "") return "";
-        const ref = col(ci) + (ri + 1), st = ri === 0 ? 1 : sh.shade && sh.shade.has(ri) ? 2 : 0;
+        const ref = col(ci) + (ri + 1), st = ri === 0 ? 1 : sh.shade && sh.shade.has(ri) ? 2 : sh.indent && sh.indent.has(ri) && ci === 0 ? 3 : 0;
         return typeof v === "number" && isFinite(v) ? `<c r="${ref}" s="${st}"><v>${v}</v></c>`
           : `<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
       }).join("") + "</row>").join("");
@@ -2228,7 +2228,7 @@ window.DPR_EMR_MAP = {
       ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
       ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n, i) => `<sheet name="${esc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets><definedNames>${sheets.map((s, i) => s.rows.length > 1 ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${esc(names[i]).replace(/'/g, "''")}'!$A$1:$${col(s.rows[0].length - 1)}$${s.rows.length}</definedName>` : "").join("")}</definedNames></workbook>`],
       ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
-      ["xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F1"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`],
+      ["xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F1"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1" indent="2"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`],
       ...sheets.map((s, i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)])
     ].map(([n, t]) => [enc.encode(n), enc.encode(t)]);
     // ZIP (stored, no compression)
@@ -2261,51 +2261,46 @@ window.DPR_EMR_MAP = {
       ["Generated", new Date().toLocaleString("en-GB")], ["Data", DEMO ? "DEMO DATA (made up)" : "Live data from the Google Sheet"],
       ["Filters applied", filt.length ? filt.map(x => `${x[0]}: ${x[1]}`).join("; ") : "none"],
       ["Patient-Level", "ODK + EMR; where a facility + cohort has EMR records, its ODK records are left out (as on the dashboard)"],
-      ["Select one", "% = n ÷ records that answered the question"],
-      ["Select multiple", "% = n ÷ records that answered; one record can give several answers, so % can add up to more than 100"],
-      ["Missing", "'Missing / not asked' = blank (skip logic or not filled)"],
+      ["Layout", "gtsummary style: question (bold, n = records that answered) → answers (n, %) → Unknown (blank: skip logic or not filled)"],
+      ["%", "% = n ÷ records that answered the question; for 'select all that apply' one record can give several answers, so % can add up to more than 100"],
+      ["Numbers", "Median (Q1, Q3), Mean (SD) and Range of the records that answered"],
       ["Excluded", "Client identifiers (RoC ID, date of birth) and data collector IDs are never included"]] });
     // records summary
     const sum = [["Tool", "County", "Records", "Facilities", "ODK records", "EMR records"]];
     TOOLS.forEach(([t, , name]) => counties.forEach(c => { const R = D[t].filter(r => cty(r) === c); if (!R.length) return;
       const e = R.filter(r => (r.data_source || r._source) === "EMR").length; sum.push([name, c, R.length, new Set(R.map(r => r._site)).size, R.length - e, e]); }));
     sheets.push({ name: "Records summary", widths: [30, 16, 10, 10, 12, 12], rows: sum });
-    TOOLS.forEach(([t, short]) => {
+    // one table per tool, gtsummary style: Characteristic | n | %
+    //   question (bold) → its answers (indented, n and % of those who answered) → Unknown (blank, n only);
+    //   numeric questions → Median (Q1, Q3) and Mean (SD); dates → earliest – latest
+    TOOLS.forEach(([t, short, name]) => {
       const R = D[t], C = CODES[t], Q = C.q || {}, order = Object.keys(Q);
-      const vars = order.filter(v => C.vars[v] && !NOT.has(v) && R.some(r => r[v] !== undefined));
-      const head = ["Variable", "Question", "Type", "Code", "Answer", "Answered (denominator)", "Total n", "Total %", ...counties.flatMap(c => [`${c} n`, `${c} %`])];
-      const rows = [head], shade = new Set();
-      vars.forEach(v => {
-        const d = C.vars[v], L = C.lists[d.list] || {}, lab = Q[v]?.l || v, type = d.multi ? "Select multiple" : "Select one";
-        const ans = R.filter(r => !blank(r[v])), byC = c => ans.filter(r => cty(r) === c);
-        const cnt = (rows, code) => rows.filter(r => d.multi ? String(r[v]).split(/\s+/).includes(code) : String(r[v]).trim() === code).length;
-        const extra = [...new Set(ans.flatMap(r => d.multi ? String(r[v]).split(/\s+/) : [String(r[v]).trim()]))].filter(c => !(c in L));
-        shade.add(rows.length);
-        [...Object.keys(L), ...extra].forEach(code => {
-          const n = cnt(ans, code);
-          rows.push([v, lab, type, code, L[code] ?? `${code}  (not an ODK code)`, ans.length, n, ans.length ? r1(100 * n / ans.length) : "",
-            ...counties.flatMap(c => { const a = byC(c), k = cnt(a, code); return [k, a.length ? r1(100 * k / a.length) : ""]; })]);
-        });
-        rows.push([v, lab, type, "", "Missing / not asked (blank)", ans.length, R.length - ans.length, "",
-          ...counties.flatMap(c => [R.filter(r => cty(r) === c && blank(r[v])).length, ""])]);
+      const rows = [["Characteristic", "n", "%"], [`Total records (${name})`, R.length, ""]], shade = new Set([1]), indent = new Set();
+      const add = (label, n, p, how) => { rows.push([label, n, p]); (how === "q" ? shade : indent).add(rows.length - 1); };
+      const fmt = x => Number.isInteger(x) ? x : r1(x);
+      order.filter(v => !NOT.has(v) && R.some(r => r[v] !== undefined)).forEach(v => {
+        const m = Q[v], lab = m.l || v, ans = R.filter(r => !blank(r[v])), miss = R.length - ans.length, d = C.vars[v];
+        if (d) {
+          const L = C.lists[d.list] || {}, cnt = code => ans.filter(r => d.multi ? String(r[v]).split(/\s+/).includes(code) : String(r[v]).trim() === code).length;
+          const extra = [...new Set(ans.flatMap(r => d.multi ? String(r[v]).split(/\s+/) : [String(r[v]).trim()]))].filter(c => !(c in L));
+          add(lab + (d.multi ? " (select all that apply)" : ""), ans.length, "", "q");
+          const geo = ["county", "sub_county", "facility"].includes(v);       // long location lists: only places with records
+          [...Object.keys(L), ...extra].forEach(code => { const n = cnt(code); if (geo && !n) return; add(L[code] ?? `${code} (not an ODK code)`, n, ans.length ? r1(100 * n / ans.length) : "", "a"); });
+        } else if (["integer", "decimal"].includes(m.t)) {
+          const x = ans.map(r => num(r[v])).filter(z => z != null).sort((a, b) => a - b), n = x.length; if (!n) return;
+          const q = p => { const h = p * (n - 1), lo = Math.floor(h); return x[lo] + (h - lo) * ((x[lo + 1] ?? x[lo]) - x[lo]); };
+          const mean = x.reduce((a, b) => a + b, 0) / n, sd = n > 1 ? Math.sqrt(x.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+          add(lab, n, "", "q");
+          add("Median (Q1, Q3)", `${fmt(q(.5))} (${fmt(q(.25))}, ${fmt(q(.75))})`, "", "a");
+          add("Mean (SD)", `${r1(mean)} (${r1(sd)})`, "", "a");
+          add("Range", `${fmt(x[0])} – ${fmt(x[n - 1])}`, "", "a");
+        } else if (m.t === "date") {
+          const x = ans.map(r => isoDate(r[v])).filter(z => /^\d{4}-\d{2}-\d{2}$/.test(z) && !isNaN(Date.parse(z))).sort(); if (!x.length) return;
+          add(lab, x.length, "", "q"); add("Earliest – latest", `${x[0]} – ${x[x.length - 1]}`, "", "a");
+        } else return;                                                       // free text is not tabulated
+        if (miss) add("Unknown", miss, "", "a");
       });
-      sheets.push({ name: `${short} frequencies`, rows, shade, widths: [24, 55, 14, 8, 42, 12, 9, 9, ...counties.flatMap(() => [10, 9])] });
-      // numeric
-      const nv = order.filter(v => ["integer", "decimal"].includes(Q[v].t) && !NOT.has(v) && R.some(r => r[v] !== undefined));
-      if (nv.length) {
-        const st = rows => { const x = rows.map(r => num(r[v_])).filter(z => z != null).sort((a, b) => a - b), n = x.length;
-          const q = p => n ? x[Math.min(n - 1, Math.floor(p * (n - 1)))] + (p * (n - 1) % 1) * ((x[Math.min(n - 1, Math.floor(p * (n - 1)) + 1)] ?? x[n - 1]) - x[Math.floor(p * (n - 1))]) : "";
-          const m = n ? x.reduce((a, b) => a + b, 0) / n : 0, sd = n > 1 ? Math.sqrt(x.reduce((a, b) => a + (b - m) ** 2, 0) / (n - 1)) : "";
-          return [n, rows.length - n, n ? r1(m) : "", sd === "" ? "" : r1(sd), n ? q(.5) : "", n ? q(.25) : "", n ? q(.75) : "", n ? x[0] : "", n ? x[n - 1] : ""]; };
-        let v_;
-        const rows2 = [["Variable", "Question", "Group", "n", "Missing", "Mean", "SD", "Median", "Q1", "Q3", "Min", "Max"]];
-        nv.forEach(v => { v_ = v; rows2.push([v, Q[v].l, "Total", ...st(R)]); counties.forEach(c => { const a = R.filter(r => cty(r) === c); if (a.length) rows2.push([v, Q[v].l, c, ...st(a)]); }); });
-        sheets.push({ name: `${short} numeric`, rows: rows2, widths: [24, 55, 14, 8, 9, 9, 9, 9, 9, 9, 9, 9] });
-      }
-      // dates
-      const dv = order.filter(v => Q[v].t === "date" && !NOT.has(v) && R.some(r => r[v] !== undefined));
-      if (dv.length) sheets.push({ name: `${short} dates`, widths: [24, 55, 8, 9, 12, 12], rows: [["Variable", "Question", "n", "Missing", "Earliest", "Latest"],
-        ...dv.map(v => { const x = R.map(r => isoDate(r[v])).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s))).sort(); return [v, Q[v].l, x.length, R.length - x.length, x[0] || "", x[x.length - 1] || ""]; })] });
+      sheets.push({ name: `${short} – ${name}`.slice(0, 31), rows, shade, indent, widths: [80, 16, 9] });
     });
     const a = document.createElement("a"); a.href = URL.createObjectURL(xlsxBlob(sheets));
     a.download = `DPR2026_Frequencies_${new Date().toISOString().slice(0, 10)}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
