@@ -2017,6 +2017,17 @@ window.DPR_EMR_MAP = {
       ["Repeat VL done", r => r.repeat_vl_done_12m === "1"],
       ["Repeat VL suppressed", r => r.repeat_vl_result_12m === "1"]] }
   ];
+  /** ODK questions used for each cascade step (shown in the table and the Excel file). */
+  const CASC_Q = {
+    tb:  [[], ["baseline_screening", "tb_screen_result"], ["tb_screen_result"], ["tb_lam_test", "xpert_mtb_test"],
+          ["tb_screen_result", "tb_lam_result", "xpert_mtb_result"], ["tb_tx_started", "tb_screen_result"], ["tb_tx_outcome", "tb_tx_status_last"]],
+    tpt: [[], ["tpt_eligible"], ["tpt_introduced", "tpt_status_init"], ["tpt_status_6m", "tpt_status_12m", "tpt_status_24m"]],
+    ahd: [[], ["cd4_test_baseline"], ["cd4_result", "age"], ["tb_lam_test"], ["crag_test"], ["crag_result"], ["cm_tx_started"]],
+    vl:  [["care_status_12m"], ["vl_done_12m"], ["vl_result_12m"], ["vl_result_12m"], ["vl_result_12m"], ["eac_received_12m"], ["eac_complete_12m"],
+          ["repeat_vl_done_12m"], ["repeat_vl_result_12m"]]
+  };
+  const qShort = v => { const l = CODES.pl.q?.[v]?.l || v, m = l.match(/^(\d+[a-z]?)\./); return m ? `Q${m[1]} ${v}` : v; };
+  const cascQ = (id, i) => (CASC_Q[id]?.[i] || []).map(qShort).join("; ") || "all records";
   /** Runs a cascade on records → [{label, base, rows}] */
   function cascadeRun(cs, rows) {
     const out = [];
@@ -2044,9 +2055,9 @@ window.DPR_EMR_MAP = {
     const steps = runs[0][1];
     const cell = (st, i, run) => { const n = run[i].rows.length, b = run[i].base < 0 ? null : run[run[i].base].rows.length;
       return b == null ? n.toLocaleString() : `${n.toLocaleString()} (${b ? pct(n, b) + "%" : "–"})`; };
-    $("#casc-table").innerHTML = table(["Step", ...groups.map(g => g[0] === "Total" ? "<b>Total</b>" : g[0])],
-      steps.map((s, i) => [esc(s.label) + (s.base >= 0 ? ` <span class="muted">(of step ${s.base + 1})</span>` : ""), ...runs.map(([, run]) => cell(s, i, run))]),
-      groups.map((_, i) => i + 1));
+    $("#casc-table").innerHTML = table(["Step", "Question(s) used", ...groups.map(g => g[0] === "Total" ? "<b>Total</b>" : g[0])],
+      steps.map((s, i) => [`${i + 1}. ${esc(s.label)}` + (s.base >= 0 ? ` <span class="muted">(of step ${s.base + 1})</span>` : ""), `<span class="muted">${esc(cascQ(cs.id, i))}</span>`, ...runs.map(([, run]) => cell(s, i, run))]),
+      groups.map((_, i) => i + 2));
     chart("c-casc", "bar", steps.map((s, i) => `${i + 1}. ${s.label}`), runs.filter(([g]) => g !== "Total" || runs.length === 2).map(([g, run], k) => ({
       label: g, data: run.map(s => s.base < 0 ? 100 : (run[s.base].rows.length ? pct(s.rows.length, run[s.base].rows.length) : null)),
       nd: run.map(s => `${s.rows.length}/${s.base < 0 ? s.rows.length : run[s.base].rows.length}`) })), { pct: true });
@@ -2281,6 +2292,27 @@ window.DPR_EMR_MAP = {
 </div>`;
   }
 
+  // ---------------------------------------------------------------- assumptions and data cleaning (About tab + Excel)
+  const ASSUMPTIONS = [
+    ["Data sources", "HF assessment, Patient-Level and KII forms from ODK Central, copied to the Google Sheet by the sync script (hourly or on demand). EMR patient extracts (CSV files in the Drive folder) are added to the Patient-Level data; the data_source column says ODK or EMR."],
+    ["Identifiers", "RoC ID / CCC number, other patient identifiers, date of birth, phone numbers and data collector IDs are removed before the data reach the sheet and are never shown or exported."],
+    ["Pilot county", "Nairobi (Kibra CHC, Kware Dispensary) was the pilot; it is excluded from all figures unless the Pilot sites filter includes it."],
+    ["ODK and EMR for the same facility", "Where a facility has EMR records for a cohort, its ODK records for that cohort are left out, so patients are not counted twice. The Google Sheet keeps both."],
+    ["Facility matching", "Each record is matched to a study site by site ID, then MFL code, then facility name (including old names, e.g. Uasin Gishu District Hospital), then the EMR file name, then the sub-county (when it has one study facility). When the MFL code points to another study site and the facility name does not confirm the saved site, the MFL code wins. MFL codes come from KMHFR (three EMR codes from the facility extracts)."],
+    ["EMR answers → ODK codes", "EMR labels are converted to the ODK answer codes of the Patient-Level form; answers that are already codes (e.g. \"1 3 6\") are kept. \"NULL\", \"N/A\" and similar placeholders count as blank. Facility name, KEPH level, ownership and MFL are filled from the site list."],
+    ["Dates", "Dates are stored as YYYY-MM-DD (dd/mm/yyyy is converted). Some EMR extracts write YYYY-DD-MM: when any date of a file (facility + cohort) has a \"month\" above 12 and none has a \"day\" above 12, every date of that file is turned round (2025-03-06 → 2025-06-03)."],
+    ["Cohorts", "12-month cohort = ART start June–September 2025 (code 1); 24-month cohort = June–September 2024 (code 2). The cohort is taken from the year when the EMR label is wrong. 24-month answers are blank for the 12-month cohort."],
+    ["HF data on patient records", "Facility characteristics (KEPH level, ownership, integration model B15, eligibility, funding…) are linked from the latest HF assessment of the same facility, by MFL code (site ID when there is no MFL)."],
+    ["Retention", "Active on ART = \"Alive and active on ART\" among records with a documented care status (\"Not documented\" excluded)."],
+    ["Viral load", "VL coverage = VL done among those active; suppression = <200 copies/mL among records with a result; ≥200 = not suppressed (LLV 200–999 and ≥1,000)."],
+    ["AHD", "Baseline CD4 <200 cells/µL or age <5 years at ART start."],
+    ["TB and TPT cascades", "Steps are nested (each % is out of the step it follows from); people diagnosed or on TB treatment at screening count as diagnosed and on treatment without a TB-LAM/Xpert result. TPT completed = TC at 6, 12 or 24 months."],
+    ["Time to exit (Kaplan–Meier)", "Exit = LTFU not resumed, stopped ART or died, at the documented date (the follow-up point if missing); transfer out is censored at the transfer date; others are censored at the last documented visit; time 0 = ART start."],
+    ["Completeness", "A question is checked where it is due (always-asked questions; follow-up items when the form requires them). Incomplete = blank or answered \"Not documented\"."],
+    ["Frequencies", "% = n ÷ records that answered the question; for 'select all that apply' one record can give several answers, so % can add up to more than 100. Unknown = blank."],
+    ["Targets", "10 HF assessments per county (pilot excluded); 30 patient records and 3 KIIs per facility."]
+  ];
+
   // ---------------------------------------------------------------- download: frequencies for all tools (Excel)
   /** Minimal .xlsx writer (no library): sheets = [{ name, rows: [[…]], widths: [], shade: Set(row indexes) }]. */
   function xlsxBlob(sheets) {
@@ -2340,6 +2372,7 @@ window.DPR_EMR_MAP = {
       ["%", "% = n ÷ records that answered the question; for 'select all that apply' one record can give several answers, so % can add up to more than 100"],
       ["Numbers", "Median (Q1, Q3), Mean (SD) and Range of the records that answered"],
       ["Excluded", "Client identifiers (RoC ID, date of birth) and data collector IDs are never included"]] });
+    sheets.push({ name: "Assumptions & cleaning", widths: [6, 34, 120], rows: [["#", "Item", "Data cleaning rule / assumption"], ...ASSUMPTIONS.map(([k, t], i) => [i + 1, k, t])] });
     // records summary
     const sum = [["Tool", "County", "Records", "Facilities", "ODK records", "EMR records"]];
     TOOLS.forEach(([t, , name]) => counties.forEach(c => { const R = D[t].filter(r => cty(r) === c); if (!R.length) return;
@@ -2348,15 +2381,15 @@ window.DPR_EMR_MAP = {
     // cascades by county (Patient-Level), as on the Patient outcomes tab
     { const P = D.pl, cos = CFG.counties.filter(c => P.some(r => SITE[r._site]?.county === c));
       const groups = [["Total", P], ...cos.map(c => [c, P.filter(r => SITE[r._site]?.county === c)])];
-      const rows = [["Cascade / step", "% of", ...groups.flatMap(([g]) => [`${g} n`, `${g} %`])]], shade = new Set(), indent = new Set();
+      const rows = [["Cascade / step", "Question(s) used", "% of", ...groups.flatMap(([g]) => [`${g} n`, `${g} %`])]], shade = new Set(), indent = new Set();
       CASCADES.forEach(cs => {
-        rows.push([cs.title, "", ...groups.flatMap(() => ["", ""])]); shade.add(rows.length - 1);
+        rows.push([cs.title, "", "", ...groups.flatMap(() => ["", ""])]); shade.add(rows.length - 1);
         const runs = groups.map(([, rr]) => cascadeRun(cs, rr));
-        runs[0].forEach((st, i) => { rows.push([`${i + 1}. ${st.label}`, st.base < 0 ? "" : `step ${st.base + 1}`,
+        runs[0].forEach((st, i) => { rows.push([`${i + 1}. ${st.label}`, cascQ(cs.id, i), st.base < 0 ? "" : `step ${st.base + 1}`,
           ...runs.flatMap(run => { const n = run[i].rows.length, b = run[i].base < 0 ? null : run[run[i].base].rows.length; return [n, b == null ? "" : b ? r1(100 * n / b) : ""]; })]);
           indent.add(rows.length - 1); });
       });
-      sheets.push({ name: "Cascades by county", rows, shade, indent, widths: [52, 9, ...groups.flatMap(() => [9, 8])] }); }
+      sheets.push({ name: "Cascades by county", rows, shade, indent, widths: [52, 48, 9, ...groups.flatMap(() => [9, 8])] }); }
     // one table per tool, gtsummary style: Characteristic | n | %
     //   question (bold) → its answers (indented, n and % of those who answered) → Unknown (blank, n only);
     //   numeric questions → Median (Q1, Q3) and Mean (SD); dates → earliest – latest
@@ -2430,7 +2463,9 @@ window.DPR_EMR_MAP = {
       <li><b>Active on ART</b> – care status = "Alive and active on ART" at the follow-up point, among records with a documented status (excludes "Not documented").</li>
       <li><b>VL coverage</b> – VL done among those active at the point. <b>VL suppression</b> – result &lt;200 copies/mL among records with a result.</li>
       <li><b>AHD</b> – baseline CD4 &lt;200 or age &lt;5 at ART initiation.</li>
-      <li><b>Red flags</b> – integration date outside window; facility appears stand-alone; &lt;15 new initiations in a cohort window; reserve site used.</li></ul></div>`;
+      <li><b>Red flags</b> – integration date outside window; facility appears stand-alone; &lt;15 new initiations in a cohort window; reserve site used.</li></ul></div>
+      <div class="card" style="margin-top:16px"><h3>Data cleaning and assumptions</h3>
+      <ol>${ASSUMPTIONS.map(([k, t]) => `<li><b>${esc(k)}</b> – ${esc(t)}</li>`).join("")}</ol></div>`;
 
   }
 
